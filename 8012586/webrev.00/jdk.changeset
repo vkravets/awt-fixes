@@ -1,0 +1,20 @@
+# HG changeset patch
+# User Vladimir Kravets <vova.kravets@gmail.com>
+# Date 1366447480 -10800
+# Branch 8012586
+# Node ID 02cabb8594f5c7f9d603bd1bd6b140371d928091
+# Parent  c70346f4c0a98b8c9debf8a4d33f96f2a4d8496d
+fix of 8012586
+
+diff --git a/src/solaris/classes/sun/awt/X11/XWindowPeer.java b/src/solaris/classes/sun/awt/X11/XWindowPeer.java
+--- a/src/solaris/classes/sun/awt/X11/XWindowPeer.java
++++ b/src/solaris/classes/sun/awt/X11/XWindowPeer.java
+@@ -1887,7 +1887,7 @@
+         switch (getWindowType())
+         {
+             case NORMAL:
+-                typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_NORMAL;
++                typeAtom = (ownerPeer == null) ? protocol.XA_NET_WM_WINDOW_TYPE_NORMAL : protocol.XA_NET_WM_WINDOW_TYPE_DIALOG;
+                 break;
+             case UTILITY:
+                 typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_UTILITY;

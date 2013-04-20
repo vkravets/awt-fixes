@@ -1,0 +1,2361 @@
+<?xml version="1.0"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head><meta http-equiv="cache-control" content="no-cache" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="-1" />
+<!--
+   Note to customizers: the body of the webrev is IDed as SUNWwebrev
+   to allow easy overriding by users of webrev via the userContent.css
+   mechanism available in some browsers.
+
+   For example, to have all "removed" information be red instead of
+   brown, set a rule in your userContent.css file like:
+
+       body#SUNWwebrev span.removed { color: red ! important; }
+-->
+<style type="text/css" media="screen">
+body {
+    background-color: #eeeeee;
+}
+hr {
+    border: none 0;
+    border-top: 1px solid #aaa;
+    height: 1px;
+}
+div.summary {
+    font-size: .8em;
+    border-bottom: 1px solid #aaa;
+    padding-left: 1em;
+    padding-right: 1em;
+}
+div.summary h2 {
+    margin-bottom: 0.3em;
+}
+div.summary table th {
+    text-align: right;
+    vertical-align: top;
+    white-space: nowrap;
+}
+span.lineschanged {
+    font-size: 0.7em;
+}
+span.oldmarker {
+    color: red;
+    font-size: large;
+    font-weight: bold;
+}
+span.newmarker {
+    color: green;
+    font-size: large;
+    font-weight: bold;
+}
+span.removed {
+    color: brown;
+}
+span.changed {
+    color: blue;
+}
+span.new {
+    color: blue;
+    font-weight: bold;
+}
+a.print { font-size: x-small; }
+
+</style>
+
+<style type="text/css" media="print">
+pre { font-size: 0.8em; font-family: courier, monospace; }
+span.removed { color: #444; font-style: italic }
+span.changed { font-weight: bold; }
+span.new { font-weight: bold; }
+span.newmarker { font-size: 1.2em; font-weight: bold; }
+span.oldmarker { font-size: 1.2em; font-weight: bold; }
+a.print {display: none}
+hr { border: none 0; border-top: 1px solid #aaa; height: 1px; }
+</style>
+
+<title>New src/solaris/classes/sun/awt/X11/XWindowPeer.java</title>
+<body id="SUNWwebrev">
+<pre>
+   1 /*
+   2  * Copyright (c) 2002, 2010, Oracle and/or its affiliates. All rights reserved.
+   3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+   4  *
+   5  * This code is free software; you can redistribute it and/or modify it
+   6  * under the terms of the GNU General Public License version 2 only, as
+   7  * published by the Free Software Foundation.  Oracle designates this
+   8  * particular file as subject to the "Classpath" exception as provided
+   9  * by Oracle in the LICENSE file that accompanied this code.
+  10  *
+  11  * This code is distributed in the hope that it will be useful, but WITHOUT
+  12  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+  13  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+  14  * version 2 for more details (a copy is included in the LICENSE file that
+  15  * accompanied this code).
+  16  *
+  17  * You should have received a copy of the GNU General Public License version
+  18  * 2 along with this work; if not, write to the Free Software Foundation,
+  19  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+  20  *
+  21  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+  22  * or visit www.oracle.com if you need additional information or have any
+  23  * questions.
+  24  */
+  25 package sun.awt.X11;
+  26 
+  27 import java.awt.*;
+  28 
+  29 import java.awt.event.ComponentEvent;
+  30 import java.awt.event.FocusEvent;
+  31 import java.awt.event.WindowEvent;
+  32 
+  33 import java.awt.image.BufferedImage;
+  34 
+  35 import java.awt.peer.ComponentPeer;
+  36 import java.awt.peer.WindowPeer;
+  37 
+  38 import java.io.UnsupportedEncodingException;
+  39 
+  40 import java.security.AccessController;
+  41 import java.security.PrivilegedAction;
+  42 
+  43 import java.util.ArrayList;
+  44 import java.util.HashSet;
+  45 import java.util.Iterator;
+  46 import java.util.Set;
+  47 import java.util.Vector;
+  48 
+  49 import java.util.concurrent.atomic.AtomicBoolean;
+  50 
+  51 import sun.util.logging.PlatformLogger;
+  52 
+  53 import sun.awt.AWTAccessor;
+  54 import sun.awt.DisplayChangedListener;
+  55 import sun.awt.SunToolkit;
+  56 import sun.awt.X11GraphicsDevice;
+  57 import sun.awt.X11GraphicsEnvironment;
+  58 
+  59 import sun.java2d.pipe.Region;
+  60 
+  61 class XWindowPeer extends XPanelPeer implements WindowPeer,
+  62                                                 DisplayChangedListener {
+  63 
+  64     private static final PlatformLogger log = PlatformLogger.getLogger("sun.awt.X11.XWindowPeer");
+  65     private static final PlatformLogger focusLog = PlatformLogger.getLogger("sun.awt.X11.focus.XWindowPeer");
+  66     private static final PlatformLogger insLog = PlatformLogger.getLogger("sun.awt.X11.insets.XWindowPeer");
+  67     private static final PlatformLogger grabLog = PlatformLogger.getLogger("sun.awt.X11.grab.XWindowPeer");
+  68     private static final PlatformLogger iconLog = PlatformLogger.getLogger("sun.awt.X11.icon.XWindowPeer");
+  69 
+  70     // should be synchronized on awtLock
+  71     private static Set&lt;XWindowPeer&gt; windows = new HashSet&lt;XWindowPeer&gt;();
+  72 
+  73 
+  74     private boolean cachedFocusableWindow;
+  75     XWarningWindow warningWindow;
+  76 
+  77     private boolean alwaysOnTop;
+  78     private boolean locationByPlatform;
+  79 
+  80     Dialog modalBlocker;
+  81     boolean delayedModalBlocking = false;
+  82     Dimension targetMinimumSize = null;
+  83 
+  84     private XWindowPeer ownerPeer;
+  85 
+  86     // used for modal blocking to keep existing z-order
+  87     protected XWindowPeer prevTransientFor, nextTransientFor;
+  88     // value of WM_TRANSIENT_FOR hint set on this window
+  89     private XWindowPeer curRealTransientFor;
+  90 
+  91     private boolean grab = false; // Whether to do a grab during showing
+  92 
+  93     private boolean isMapped = false; // Is this window mapped or not
+  94     private boolean mustControlStackPosition = false; // Am override-redirect not on top
+  95     private XEventDispatcher rootPropertyEventDispatcher = null;
+  96 
+  97     private static final AtomicBoolean isStartupNotificationRemoved = new AtomicBoolean();
+  98 
+  99     /*
+ 100      * Focus related flags
+ 101      */
+ 102     private boolean isUnhiding = false;             // Is the window unhiding.
+ 103     private boolean isBeforeFirstMapNotify = false; // Is the window (being shown) between
+ 104                                                     //    setVisible(true) &amp; handleMapNotify().
+ 105 
+ 106     /**
+ 107      * The type of the window.
+ 108      *
+ 109      * The type is supposed to be immutable while the peer object exists.
+ 110      * The value gets initialized in the preInit() method.
+ 111      */
+ 112     private Window.Type windowType = Window.Type.NORMAL;
+ 113 
+ 114     public final Window.Type getWindowType() {
+ 115         return windowType;
+ 116     }
+ 117 
+ 118     // It need to be accessed from XFramePeer.
+ 119     protected Vector &lt;ToplevelStateListener&gt; toplevelStateListeners = new Vector&lt;ToplevelStateListener&gt;();
+ 120     XWindowPeer(XCreateWindowParams params) {
+ 121         super(params.putIfNull(PARENT_WINDOW, Long.valueOf(0)));
+ 122     }
+ 123 
+ 124     XWindowPeer(Window target) {
+ 125         super(new XCreateWindowParams(new Object[] {
+ 126             TARGET, target,
+ 127             PARENT_WINDOW, Long.valueOf(0)}));
+ 128     }
+ 129 
+ 130     /*
+ 131      * This constant defines icon size recommended for using.
+ 132      * Apparently, we should use XGetIconSizes which should
+ 133      * return icon sizes would be most appreciated by the WM.
+ 134      * However, XGetIconSizes always returns 0 for some reason.
+ 135      * So the constant has been introduced.
+ 136      */
+ 137     private static final int PREFERRED_SIZE_FOR_ICON = 128;
+ 138 
+ 139     /*
+ 140      * Sometimes XChangeProperty(_NET_WM_ICON) doesn't work if
+ 141      * image buffer is too large. This constant holds maximum
+ 142      * length of buffer which can be used with _NET_WM_ICON hint.
+ 143      * It holds int's value.
+ 144      */
+ 145     private static final int MAXIMUM_BUFFER_LENGTH_NET_WM_ICON = (2&lt;&lt;15) - 1;
+ 146 
+ 147     void preInit(XCreateWindowParams params) {
+ 148         target = (Component)params.get(TARGET);
+ 149         windowType = ((Window)target).getType();
+ 150         params.put(REPARENTED,
+ 151                    Boolean.valueOf(isOverrideRedirect() || isSimpleWindow()));
+ 152         super.preInit(params);
+ 153         params.putIfNull(BIT_GRAVITY, Integer.valueOf(XConstants.NorthWestGravity));
+ 154 
+ 155         long eventMask = 0;
+ 156         if (params.containsKey(EVENT_MASK)) {
+ 157             eventMask = ((Long)params.get(EVENT_MASK));
+ 158         }
+ 159         eventMask |= XConstants.VisibilityChangeMask;
+ 160         params.put(EVENT_MASK, eventMask);
+ 161 
+ 162         XA_NET_WM_STATE = XAtom.get("_NET_WM_STATE");
+ 163 
+ 164 
+ 165         params.put(OVERRIDE_REDIRECT, Boolean.valueOf(isOverrideRedirect()));
+ 166 
+ 167         SunToolkit.awtLock();
+ 168         try {
+ 169             windows.add(this);
+ 170         } finally {
+ 171             SunToolkit.awtUnlock();
+ 172         }
+ 173 
+ 174         cachedFocusableWindow = isFocusableWindow();
+ 175 
+ 176         Font f = target.getFont();
+ 177         if (f == null) {
+ 178             f = XWindow.getDefaultFont();
+ 179             target.setFont(f);
+ 180             // we should not call setFont because it will call a repaint
+ 181             // which the peer may not be ready to do yet.
+ 182         }
+ 183         Color c = target.getBackground();
+ 184         if (c == null) {
+ 185             Color background = SystemColor.window;
+ 186             target.setBackground(background);
+ 187             // we should not call setBackGround because it will call a repaint
+ 188             // which the peer may not be ready to do yet.
+ 189         }
+ 190         c = target.getForeground();
+ 191         if (c == null) {
+ 192             target.setForeground(SystemColor.windowText);
+ 193             // we should not call setForeGround because it will call a repaint
+ 194             // which the peer may not be ready to do yet.
+ 195         }
+ 196 
+ 197         alwaysOnTop = ((Window)target).isAlwaysOnTop() &amp;&amp; ((Window)target).isAlwaysOnTopSupported();
+ 198 
+ 199         GraphicsConfiguration gc = getGraphicsConfiguration();
+ 200         ((X11GraphicsDevice)gc.getDevice()).addDisplayChangedListener(this);
+ 201     }
+ 202 
+ 203     protected String getWMName() {
+ 204         String name = target.getName();
+ 205         if (name == null || name.trim().equals("")) {
+ 206             name = " ";
+ 207         }
+ 208         return name;
+ 209     }
+ 210 
+ 211     private static native String getLocalHostname();
+ 212     private static native int getJvmPID();
+ 213 
+ 214     void postInit(XCreateWindowParams params) {
+ 215         super.postInit(params);
+ 216 
+ 217         // Init WM_PROTOCOLS atom
+ 218         initWMProtocols();
+ 219 
+ 220         // Set _NET_WM_PID and WM_CLIENT_MACHINE using this JVM
+ 221         XAtom.get("WM_CLIENT_MACHINE").setProperty(getWindow(), getLocalHostname());
+ 222         XAtom.get("_NET_WM_PID").setCard32Property(getWindow(), getJvmPID());
+ 223 
+ 224         // Set WM_TRANSIENT_FOR and group_leader
+ 225         Window t_window = (Window)target;
+ 226         Window owner = t_window.getOwner();
+ 227         if (owner != null) {
+ 228             ownerPeer = (XWindowPeer)owner.getPeer();
+ 229             if (focusLog.isLoggable(PlatformLogger.FINER)) {
+ 230                 focusLog.finer("Owner is " + owner);
+ 231                 focusLog.finer("Owner peer is " + ownerPeer);
+ 232                 focusLog.finer("Owner X window " + Long.toHexString(ownerPeer.getWindow()));
+ 233                 focusLog.finer("Owner content X window " + Long.toHexString(ownerPeer.getContentWindow()));
+ 234             }
+ 235             // as owner window may be an embedded window, we must get a toplevel window
+ 236             // to set as TRANSIENT_FOR hint
+ 237             long ownerWindow = ownerPeer.getWindow();
+ 238             if (ownerWindow != 0) {
+ 239                 XToolkit.awtLock();
+ 240                 try {
+ 241                     // Set WM_TRANSIENT_FOR
+ 242                     if (focusLog.isLoggable(PlatformLogger.FINE)) {
+ 243                         focusLog.fine("Setting transient on " + Long.toHexString(getWindow())
+ 244                                       + " for " + Long.toHexString(ownerWindow));
+ 245                     }
+ 246                     setToplevelTransientFor(this, ownerPeer, false, true);
+ 247 
+ 248                     // Set group leader
+ 249                     XWMHints hints = getWMHints();
+ 250                     hints.set_flags(hints.get_flags() | (int)XUtilConstants.WindowGroupHint);
+ 251                     hints.set_window_group(ownerWindow);
+ 252                     XlibWrapper.XSetWMHints(XToolkit.getDisplay(), getWindow(), hints.pData);
+ 253                 }
+ 254                 finally {
+ 255                     XToolkit.awtUnlock();
+ 256                 }
+ 257             }
+ 258         }
+ 259 
+ 260         if (owner != null || isSimpleWindow()) {
+ 261             XNETProtocol protocol = XWM.getWM().getNETProtocol();
+ 262             if (protocol != null &amp;&amp; protocol.active()) {
+ 263                 XToolkit.awtLock();
+ 264                 try {
+ 265                     XAtomList net_wm_state = getNETWMState();
+ 266                     net_wm_state.add(protocol.XA_NET_WM_STATE_SKIP_TASKBAR);
+ 267                     setNETWMState(net_wm_state);
+ 268                 } finally {
+ 269                     XToolkit.awtUnlock();
+ 270                 }
+ 271 
+ 272             }
+ 273         }
+ 274 
+ 275          // Init warning window(for applets)
+ 276         if (((Window)target).getWarningString() != null) {
+ 277             // accessSystemTray permission allows to display TrayIcon, TrayIcon tooltip
+ 278             // and TrayIcon balloon windows without a warning window.
+ 279             if (!AWTAccessor.getWindowAccessor().isTrayIconWindow((Window)target)) {
+ 280                 warningWindow = new XWarningWindow((Window)target, getWindow(), this);
+ 281             }
+ 282         }
+ 283 
+ 284         setSaveUnder(true);
+ 285 
+ 286         updateIconImages();
+ 287 
+ 288         updateShape();
+ 289         updateOpacity();
+ 290         // no need in updateOpaque() as it is no-op
+ 291     }
+ 292 
+ 293     public void updateIconImages() {
+ 294         Window target = (Window)this.target;
+ 295         java.util.List&lt;Image&gt; iconImages = ((Window)target).getIconImages();
+ 296         XWindowPeer ownerPeer = getOwnerPeer();
+ 297         winAttr.icons = new ArrayList&lt;XIconInfo&gt;();
+ 298         if (iconImages.size() != 0) {
+ 299             //read icon images from target
+ 300             winAttr.iconsInherited = false;
+ 301             for (Iterator&lt;Image&gt; i = iconImages.iterator(); i.hasNext(); ) {
+ 302                 Image image = i.next();
+ 303                 if (image == null) {
+ 304                     if (log.isLoggable(PlatformLogger.FINEST)) {
+ 305                         log.finest("XWindowPeer.updateIconImages: Skipping the image passed into Java because it's null.");
+ 306                     }
+ 307                     continue;
+ 308                 }
+ 309                 XIconInfo iconInfo;
+ 310                 try {
+ 311                     iconInfo = new XIconInfo(image);
+ 312                 } catch (Exception e){
+ 313                     if (log.isLoggable(PlatformLogger.FINEST)) {
+ 314                         log.finest("XWindowPeer.updateIconImages: Perhaps the image passed into Java is broken. Skipping this icon.");
+ 315                     }
+ 316                     continue;
+ 317                 }
+ 318                 if (iconInfo.isValid()) {
+ 319                     winAttr.icons.add(iconInfo);
+ 320                 }
+ 321             }
+ 322         }
+ 323 
+ 324         // Fix for CR#6425089
+ 325         winAttr.icons = normalizeIconImages(winAttr.icons);
+ 326 
+ 327         if (winAttr.icons.size() == 0) {
+ 328             //target.icons is empty or all icon images are broken
+ 329             if (ownerPeer != null) {
+ 330                 //icon is inherited from parent
+ 331                 winAttr.iconsInherited = true;
+ 332                 winAttr.icons = ownerPeer.getIconInfo();
+ 333             } else {
+ 334                 //default icon is used
+ 335                 winAttr.iconsInherited = false;
+ 336                 winAttr.icons = getDefaultIconInfo();
+ 337             }
+ 338         }
+ 339         recursivelySetIcon(winAttr.icons);
+ 340     }
+ 341 
+ 342     /*
+ 343      * Sometimes XChangeProperty(_NET_WM_ICON) doesn't work if
+ 344      * image buffer is too large. This function help us accommodate
+ 345      * initial list of the icon images to certainly-acceptable.
+ 346      * It does scale some of these icons to appropriate size
+ 347      * if it's necessary.
+ 348      */
+ 349     static java.util.List&lt;XIconInfo&gt; normalizeIconImages(java.util.List&lt;XIconInfo&gt; icons) {
+ 350         java.util.List&lt;XIconInfo&gt; result = new ArrayList&lt;XIconInfo&gt;();
+ 351         int totalLength = 0;
+ 352         boolean haveLargeIcon = false;
+ 353 
+ 354         for (XIconInfo icon : icons) {
+ 355             int width = icon.getWidth();
+ 356             int height = icon.getHeight();
+ 357             int length = icon.getRawLength();
+ 358 
+ 359             if (width &gt; PREFERRED_SIZE_FOR_ICON || height &gt; PREFERRED_SIZE_FOR_ICON) {
+ 360                 if (haveLargeIcon) {
+ 361                     continue;
+ 362                 }
+ 363                 int scaledWidth = width;
+ 364                 int scaledHeight = height;
+ 365                 while (scaledWidth &gt; PREFERRED_SIZE_FOR_ICON ||
+ 366                        scaledHeight &gt; PREFERRED_SIZE_FOR_ICON) {
+ 367                     scaledWidth = scaledWidth / 2;
+ 368                     scaledHeight = scaledHeight / 2;
+ 369                 }
+ 370 
+ 371                 icon.setScaledSize(scaledWidth, scaledHeight);
+ 372                 length = icon.getRawLength();
+ 373             }
+ 374 
+ 375             if (totalLength + length &lt;= MAXIMUM_BUFFER_LENGTH_NET_WM_ICON) {
+ 376                 totalLength += length;
+ 377                 result.add(icon);
+ 378                 if (width &gt; PREFERRED_SIZE_FOR_ICON || height &gt; PREFERRED_SIZE_FOR_ICON) {
+ 379                     haveLargeIcon = true;
+ 380                 }
+ 381             }
+ 382         }
+ 383 
+ 384         if (iconLog.isLoggable(PlatformLogger.FINEST)) {
+ 385             iconLog.finest("&gt;&gt;&gt; Length_ of buffer of icons data: " + totalLength +
+ 386                            ", maximum length: " + MAXIMUM_BUFFER_LENGTH_NET_WM_ICON);
+ 387         }
+ 388 
+ 389         return result;
+ 390     }
+ 391 
+ 392     /*
+ 393      * Dumps each icon from the list
+ 394      */
+ 395     static void dumpIcons(java.util.List&lt;XIconInfo&gt; icons) {
+ 396         if (iconLog.isLoggable(PlatformLogger.FINEST)) {
+ 397             iconLog.finest("&gt;&gt;&gt; Sizes of icon images:");
+ 398             for (Iterator&lt;XIconInfo&gt; i = icons.iterator(); i.hasNext(); ) {
+ 399                 iconLog.finest("    {0}", i.next());
+ 400             }
+ 401         }
+ 402     }
+ 403 
+ 404     public void recursivelySetIcon(java.util.List&lt;XIconInfo&gt; icons) {
+ 405         dumpIcons(winAttr.icons);
+ 406         setIconHints(icons);
+ 407         Window target = (Window)this.target;
+ 408         Window[] children = target.getOwnedWindows();
+ 409         int cnt = children.length;
+ 410         for (int i = 0; i &lt; cnt; i++) {
+ 411             ComponentPeer childPeer = children[i].getPeer();
+ 412             if (childPeer != null &amp;&amp; childPeer instanceof XWindowPeer) {
+ 413                 if (((XWindowPeer)childPeer).winAttr.iconsInherited) {
+ 414                     ((XWindowPeer)childPeer).winAttr.icons = icons;
+ 415                     ((XWindowPeer)childPeer).recursivelySetIcon(icons);
+ 416                 }
+ 417             }
+ 418         }
+ 419     }
+ 420 
+ 421     java.util.List&lt;XIconInfo&gt; getIconInfo() {
+ 422         return winAttr.icons;
+ 423     }
+ 424     void setIconHints(java.util.List&lt;XIconInfo&gt; icons) {
+ 425         //This does nothing for XWindowPeer,
+ 426         //It's overriden in XDecoratedPeer
+ 427     }
+ 428 
+ 429     private static ArrayList&lt;XIconInfo&gt; defaultIconInfo;
+ 430     protected synchronized static java.util.List&lt;XIconInfo&gt; getDefaultIconInfo() {
+ 431         if (defaultIconInfo == null) {
+ 432             defaultIconInfo = new ArrayList&lt;XIconInfo&gt;();
+ 433             if (XlibWrapper.dataModel == 32) {
+ 434                 defaultIconInfo.add(new XIconInfo(XAWTIcon32_java_icon16_png.java_icon16_png));
+ 435                 defaultIconInfo.add(new XIconInfo(XAWTIcon32_java_icon24_png.java_icon24_png));
+ 436                 defaultIconInfo.add(new XIconInfo(XAWTIcon32_java_icon32_png.java_icon32_png));
+ 437                 defaultIconInfo.add(new XIconInfo(XAWTIcon32_java_icon48_png.java_icon48_png));
+ 438             } else {
+ 439                 defaultIconInfo.add(new XIconInfo(XAWTIcon64_java_icon16_png.java_icon16_png));
+ 440                 defaultIconInfo.add(new XIconInfo(XAWTIcon64_java_icon24_png.java_icon24_png));
+ 441                 defaultIconInfo.add(new XIconInfo(XAWTIcon64_java_icon32_png.java_icon32_png));
+ 442                 defaultIconInfo.add(new XIconInfo(XAWTIcon64_java_icon48_png.java_icon48_png));
+ 443             }
+ 444         }
+ 445         return defaultIconInfo;
+ 446     }
+ 447 
+ 448     private void updateShape() {
+ 449         // Shape shape = ((Window)target).getShape();
+ 450         Shape shape = AWTAccessor.getWindowAccessor().getShape((Window)target);
+ 451         if (shape != null) {
+ 452             applyShape(Region.getInstance(shape, null));
+ 453         }
+ 454     }
+ 455 
+ 456     private void updateOpacity() {
+ 457         // float opacity = ((Window)target).getOpacity();
+ 458         float opacity = AWTAccessor.getWindowAccessor().getOpacity((Window)target);
+ 459         if (opacity &lt; 1.0f) {
+ 460             setOpacity(opacity);
+ 461         }
+ 462     }
+ 463 
+ 464     public void updateMinimumSize() {
+ 465         //This function only saves minimumSize value in XWindowPeer
+ 466         //Setting WMSizeHints is implemented in XDecoratedPeer
+ 467         targetMinimumSize = (((Component)target).isMinimumSizeSet()) ?
+ 468             ((Component)target).getMinimumSize() : null;
+ 469     }
+ 470 
+ 471     public Dimension getTargetMinimumSize() {
+ 472         return (targetMinimumSize == null) ? null : new Dimension(targetMinimumSize);
+ 473     }
+ 474 
+ 475     public XWindowPeer getOwnerPeer() {
+ 476         return ownerPeer;
+ 477     }
+ 478 
+ 479     //Fix for 6318144: PIT:Setting Min Size bigger than current size enlarges
+ 480     //the window but fails to revalidate, Sol-CDE
+ 481     //This bug is regression for
+ 482     //5025858: Resizing a decorated frame triggers componentResized event twice.
+ 483     //Since events are not posted from Component.setBounds we need to send them here.
+ 484     //Note that this function is overriden in XDecoratedPeer so event
+ 485     //posting is not changing for decorated peers
+ 486     public void setBounds(int x, int y, int width, int height, int op) {
+ 487         XToolkit.awtLock();
+ 488         try {
+ 489             Rectangle oldBounds = getBounds();
+ 490 
+ 491             super.setBounds(x, y, width, height, op);
+ 492 
+ 493             Rectangle bounds = getBounds();
+ 494 
+ 495             XSizeHints hints = getHints();
+ 496             setSizeHints(hints.get_flags() | XUtilConstants.PPosition | XUtilConstants.PSize,
+ 497                              bounds.x, bounds.y, bounds.width, bounds.height);
+ 498             XWM.setMotifDecor(this, false, 0, 0);
+ 499 
+ 500             boolean isResized = !bounds.getSize().equals(oldBounds.getSize());
+ 501             boolean isMoved = !bounds.getLocation().equals(oldBounds.getLocation());
+ 502             if (isMoved || isResized) {
+ 503                 repositionSecurityWarning();
+ 504             }
+ 505             if (isResized) {
+ 506                 postEventToEventQueue(new ComponentEvent(getEventSource(), ComponentEvent.COMPONENT_RESIZED));
+ 507             }
+ 508             if (isMoved) {
+ 509                 postEventToEventQueue(new ComponentEvent(getEventSource(), ComponentEvent.COMPONENT_MOVED));
+ 510             }
+ 511         } finally {
+ 512             XToolkit.awtUnlock();
+ 513         }
+ 514     }
+ 515 
+ 516     void updateFocusability() {
+ 517         updateFocusableWindowState();
+ 518         XToolkit.awtLock();
+ 519         try {
+ 520             XWMHints hints = getWMHints();
+ 521             hints.set_flags(hints.get_flags() | (int)XUtilConstants.InputHint);
+ 522             hints.set_input(false/*isNativelyNonFocusableWindow() ? (0):(1)*/);
+ 523             XlibWrapper.XSetWMHints(XToolkit.getDisplay(), getWindow(), hints.pData);
+ 524         }
+ 525         finally {
+ 526             XToolkit.awtUnlock();
+ 527         }
+ 528     }
+ 529 
+ 530     public Insets getInsets() {
+ 531         return new Insets(0, 0, 0, 0);
+ 532     }
+ 533 
+ 534     // NOTE: This method may be called by privileged threads.
+ 535     //       DO NOT INVOKE CLIENT CODE ON THIS THREAD!
+ 536     public void handleIconify() {
+ 537         postEvent(new WindowEvent((Window)target, WindowEvent.WINDOW_ICONIFIED));
+ 538     }
+ 539 
+ 540     // NOTE: This method may be called by privileged threads.
+ 541     //       DO NOT INVOKE CLIENT CODE ON THIS THREAD!
+ 542     public void handleDeiconify() {
+ 543         postEvent(new WindowEvent((Window)target, WindowEvent.WINDOW_DEICONIFIED));
+ 544     }
+ 545 
+ 546     // NOTE: This method may be called by privileged threads.
+ 547     //       DO NOT INVOKE CLIENT CODE ON THIS THREAD!
+ 548     public void handleStateChange(int oldState, int newState) {
+ 549         postEvent(new WindowEvent((Window)target,
+ 550                                   WindowEvent.WINDOW_STATE_CHANGED,
+ 551                                   oldState, newState));
+ 552     }
+ 553 
+ 554     /**
+ 555      * DEPRECATED:  Replaced by getInsets().
+ 556      */
+ 557     public Insets insets() {
+ 558         return getInsets();
+ 559     }
+ 560 
+ 561     boolean isAutoRequestFocus() {
+ 562         if (XToolkit.isToolkitThread()) {
+ 563             return AWTAccessor.getWindowAccessor().isAutoRequestFocus((Window)target);
+ 564         } else {
+ 565             return ((Window)target).isAutoRequestFocus();
+ 566         }
+ 567     }
+ 568 
+ 569     /*
+ 570      * Retrives real native focused window and converts it into Java peer.
+ 571      */
+ 572     static XWindowPeer getNativeFocusedWindowPeer() {
+ 573         XBaseWindow baseWindow = XToolkit.windowToXWindow(xGetInputFocus());
+ 574         return (baseWindow instanceof XWindowPeer) ? (XWindowPeer)baseWindow :
+ 575                (baseWindow instanceof XFocusProxyWindow) ?
+ 576                ((XFocusProxyWindow)baseWindow).getOwner() : null;
+ 577     }
+ 578 
+ 579     /*
+ 580      * Retrives real native focused window and converts it into Java window.
+ 581      */
+ 582     static Window getNativeFocusedWindow() {
+ 583         XWindowPeer peer = getNativeFocusedWindowPeer();
+ 584         return peer != null ? (Window)peer.target : null;
+ 585     }
+ 586 
+ 587     boolean isFocusableWindow() {
+ 588         if (XToolkit.isToolkitThread() || SunToolkit.isAWTLockHeldByCurrentThread())
+ 589         {
+ 590             return cachedFocusableWindow;
+ 591         } else {
+ 592             return ((Window)target).isFocusableWindow();
+ 593         }
+ 594     }
+ 595 
+ 596     /* WARNING: don't call client code in this method! */
+ 597     boolean isFocusedWindowModalBlocker() {
+ 598         return false;
+ 599     }
+ 600 
+ 601     long getFocusTargetWindow() {
+ 602         return getContentWindow();
+ 603     }
+ 604 
+ 605     /**
+ 606      * Returns whether or not this window peer has native X window
+ 607      * configured as non-focusable window. It might happen if:
+ 608      * - Java window is non-focusable
+ 609      * - Java window is simple Window(not Frame or Dialog)
+ 610      */
+ 611     boolean isNativelyNonFocusableWindow() {
+ 612         if (XToolkit.isToolkitThread() || SunToolkit.isAWTLockHeldByCurrentThread())
+ 613         {
+ 614             return isSimpleWindow() || !cachedFocusableWindow;
+ 615         } else {
+ 616             return isSimpleWindow() || !(((Window)target).isFocusableWindow());
+ 617         }
+ 618     }
+ 619 
+ 620     public void handleWindowFocusIn_Dispatch() {
+ 621         if (EventQueue.isDispatchThread()) {
+ 622             XKeyboardFocusManagerPeer.getInstance().setCurrentFocusedWindow((Window) target);
+ 623             WindowEvent we = new WindowEvent((Window)target, WindowEvent.WINDOW_GAINED_FOCUS);
+ 624             SunToolkit.setSystemGenerated(we);
+ 625             target.dispatchEvent(we);
+ 626         }
+ 627     }
+ 628 
+ 629     public void handleWindowFocusInSync(long serial) {
+ 630         WindowEvent we = new WindowEvent((Window)target, WindowEvent.WINDOW_GAINED_FOCUS);
+ 631         XKeyboardFocusManagerPeer.getInstance().setCurrentFocusedWindow((Window) target);
+ 632         sendEvent(we);
+ 633     }
+ 634     // NOTE: This method may be called by privileged threads.
+ 635     //       DO NOT INVOKE CLIENT CODE ON THIS THREAD!
+ 636     public void handleWindowFocusIn(long serial) {
+ 637         WindowEvent we = new WindowEvent((Window)target, WindowEvent.WINDOW_GAINED_FOCUS);
+ 638         /* wrap in Sequenced, then post*/
+ 639         XKeyboardFocusManagerPeer.getInstance().setCurrentFocusedWindow((Window) target);
+ 640         postEvent(wrapInSequenced((AWTEvent) we));
+ 641     }
+ 642 
+ 643     // NOTE: This method may be called by privileged threads.
+ 644     //       DO NOT INVOKE CLIENT CODE ON THIS THREAD!
+ 645     public void handleWindowFocusOut(Window oppositeWindow, long serial) {
+ 646         WindowEvent we = new WindowEvent((Window)target, WindowEvent.WINDOW_LOST_FOCUS, oppositeWindow);
+ 647         XKeyboardFocusManagerPeer.getInstance().setCurrentFocusedWindow(null);
+ 648         XKeyboardFocusManagerPeer.getInstance().setCurrentFocusOwner(null);
+ 649         /* wrap in Sequenced, then post*/
+ 650         postEvent(wrapInSequenced((AWTEvent) we));
+ 651     }
+ 652     public void handleWindowFocusOutSync(Window oppositeWindow, long serial) {
+ 653         WindowEvent we = new WindowEvent((Window)target, WindowEvent.WINDOW_LOST_FOCUS, oppositeWindow);
+ 654         XKeyboardFocusManagerPeer.getInstance().setCurrentFocusedWindow(null);
+ 655         XKeyboardFocusManagerPeer.getInstance().setCurrentFocusOwner(null);
+ 656         sendEvent(we);
+ 657     }
+ 658 
+ 659 /* --- DisplayChangedListener Stuff --- */
+ 660 
+ 661     /* Xinerama
+ 662      * called to check if we've been moved onto a different screen
+ 663      * Based on checkNewXineramaScreen() in awt_GraphicsEnv.c
+ 664      */
+ 665     public void checkIfOnNewScreen(Rectangle newBounds) {
+ 666         if (!XToolkit.localEnv.runningXinerama()) {
+ 667             return;
+ 668         }
+ 669 
+ 670         if (log.isLoggable(PlatformLogger.FINEST)) {
+ 671             log.finest("XWindowPeer: Check if we've been moved to a new screen since we're running in Xinerama mode");
+ 672         }
+ 673 
+ 674         int area = newBounds.width * newBounds.height;
+ 675         int intAmt, vertAmt, horizAmt;
+ 676         int largestAmt = 0;
+ 677         int curScreenNum = ((X11GraphicsDevice)getGraphicsConfiguration().getDevice()).getScreen();
+ 678         int newScreenNum = 0;
+ 679         GraphicsDevice gds[] = XToolkit.localEnv.getScreenDevices();
+ 680         GraphicsConfiguration newGC = null;
+ 681         Rectangle screenBounds;
+ 682 
+ 683         for (int i = 0; i &lt; gds.length; i++) {
+ 684             screenBounds = gds[i].getDefaultConfiguration().getBounds();
+ 685             if (newBounds.intersects(screenBounds)) {
+ 686                 horizAmt = Math.min(newBounds.x + newBounds.width,
+ 687                                     screenBounds.x + screenBounds.width) -
+ 688                            Math.max(newBounds.x, screenBounds.x);
+ 689                 vertAmt = Math.min(newBounds.y + newBounds.height,
+ 690                                    screenBounds.y + screenBounds.height)-
+ 691                           Math.max(newBounds.y, screenBounds.y);
+ 692                 intAmt = horizAmt * vertAmt;
+ 693                 if (intAmt == area) {
+ 694                     // Completely on this screen - done!
+ 695                     newScreenNum = i;
+ 696                     newGC = gds[i].getDefaultConfiguration();
+ 697                     break;
+ 698                 }
+ 699                 if (intAmt &gt; largestAmt) {
+ 700                     largestAmt = intAmt;
+ 701                     newScreenNum = i;
+ 702                     newGC = gds[i].getDefaultConfiguration();
+ 703                 }
+ 704             }
+ 705         }
+ 706         if (newScreenNum != curScreenNum) {
+ 707             if (log.isLoggable(PlatformLogger.FINEST)) {
+ 708                 log.finest("XWindowPeer: Moved to a new screen");
+ 709             }
+ 710             executeDisplayChangedOnEDT(newGC);
+ 711         }
+ 712     }
+ 713 
+ 714     /**
+ 715      * Helper method that executes the displayChanged(screen) method on
+ 716      * the event dispatch thread.  This method is used in the Xinerama case
+ 717      * and after display mode change events.
+ 718      */
+ 719     private void executeDisplayChangedOnEDT(final GraphicsConfiguration gc) {
+ 720         Runnable dc = new Runnable() {
+ 721             public void run() {
+ 722                 AWTAccessor.getComponentAccessor().
+ 723                     setGraphicsConfiguration((Component)target, gc);
+ 724             }
+ 725         };
+ 726         SunToolkit.executeOnEventHandlerThread((Component)target, dc);
+ 727     }
+ 728 
+ 729     /**
+ 730      * From the DisplayChangedListener interface; called from
+ 731      * X11GraphicsDevice when the display mode has been changed.
+ 732      */
+ 733     public void displayChanged() {
+ 734         executeDisplayChangedOnEDT(getGraphicsConfiguration());
+ 735     }
+ 736 
+ 737     /**
+ 738      * From the DisplayChangedListener interface; top-levels do not need
+ 739      * to react to this event.
+ 740      */
+ 741     public void paletteChanged() {
+ 742     }
+ 743 
+ 744     /*
+ 745      * Overridden to check if we need to update our GraphicsDevice/Config
+ 746      * Added for 4934052.
+ 747      */
+ 748     @Override
+ 749     public void handleConfigureNotifyEvent(XEvent xev) {
+ 750         // TODO: We create an XConfigureEvent every time we override
+ 751         // handleConfigureNotify() - too many!
+ 752         XConfigureEvent xe = xev.get_xconfigure();
+ 753         checkIfOnNewScreen(new Rectangle(xe.get_x(),
+ 754                                          xe.get_y(),
+ 755                                          xe.get_width(),
+ 756                                          xe.get_height()));
+ 757 
+ 758         // Don't call super until we've handled a screen change.  Otherwise
+ 759         // there could be a race condition in which a ComponentListener could
+ 760         // see the old screen.
+ 761         super.handleConfigureNotifyEvent(xev);
+ 762         repositionSecurityWarning();
+ 763     }
+ 764 
+ 765     final void requestXFocus(long time) {
+ 766         requestXFocus(time, true);
+ 767     }
+ 768 
+ 769     final void requestXFocus() {
+ 770         requestXFocus(0, false);
+ 771     }
+ 772 
+ 773     /**
+ 774      * Requests focus to this top-level. Descendants should override to provide
+ 775      * implementations based on a class of top-level.
+ 776      */
+ 777     protected void requestXFocus(long time, boolean timeProvided) {
+ 778         // Since in XAWT focus is synthetic and all basic Windows are
+ 779         // override_redirect all we can do is check whether our parent
+ 780         // is active. If it is - we can freely synthesize focus transfer.
+ 781         // Luckily, this logic is already implemented in requestWindowFocus.
+ 782         if (focusLog.isLoggable(PlatformLogger.FINE)) {
+ 783             focusLog.fine("Requesting window focus");
+ 784         }
+ 785         requestWindowFocus(time, timeProvided);
+ 786     }
+ 787 
+ 788     public final boolean focusAllowedFor() {
+ 789         if (isNativelyNonFocusableWindow()) {
+ 790             return false;
+ 791         }
+ 792 /*
+ 793         Window target = (Window)this.target;
+ 794         if (!target.isVisible() ||
+ 795             !target.isEnabled() ||
+ 796             !target.isFocusable())
+ 797         {
+ 798             return false;
+ 799         }
+ 800 */
+ 801         if (isModalBlocked()) {
+ 802             return false;
+ 803         }
+ 804         return true;
+ 805     }
+ 806 
+ 807     public void handleFocusEvent(XEvent xev) {
+ 808         XFocusChangeEvent xfe = xev.get_xfocus();
+ 809         FocusEvent fe;
+ 810         if (focusLog.isLoggable(PlatformLogger.FINE)) {
+ 811             focusLog.fine("{0}", xfe);
+ 812         }
+ 813         if (isEventDisabled(xev)) {
+ 814             return;
+ 815         }
+ 816         if (xev.get_type() == XConstants.FocusIn)
+ 817         {
+ 818             // If this window is non-focusable don't post any java focus event
+ 819             if (focusAllowedFor()) {
+ 820                 if (xfe.get_mode() == XConstants.NotifyNormal // Normal notify
+ 821                     || xfe.get_mode() == XConstants.NotifyWhileGrabbed) // Alt-Tab notify
+ 822                 {
+ 823                     handleWindowFocusIn(xfe.get_serial());
+ 824                 }
+ 825             }
+ 826         }
+ 827         else
+ 828         {
+ 829             if (xfe.get_mode() == XConstants.NotifyNormal // Normal notify
+ 830                 || xfe.get_mode() == XConstants.NotifyWhileGrabbed) // Alt-Tab notify
+ 831             {
+ 832                 // If this window is non-focusable don't post any java focus event
+ 833                 if (!isNativelyNonFocusableWindow()) {
+ 834                     XWindowPeer oppositeXWindow = getNativeFocusedWindowPeer();
+ 835                     Object oppositeTarget = (oppositeXWindow!=null)? oppositeXWindow.getTarget() : null;
+ 836                     Window oppositeWindow = null;
+ 837                     if (oppositeTarget instanceof Window) {
+ 838                         oppositeWindow = (Window) oppositeTarget;
+ 839                     }
+ 840                     // Check if opposite window is non-focusable. In that case we don't want to
+ 841                     // post any event.
+ 842                     if (oppositeXWindow != null &amp;&amp; oppositeXWindow.isNativelyNonFocusableWindow()) {
+ 843                         return;
+ 844                     }
+ 845                     if (this == oppositeXWindow) {
+ 846                         oppositeWindow = null;
+ 847                     } else if (oppositeXWindow instanceof XDecoratedPeer) {
+ 848                         if (((XDecoratedPeer) oppositeXWindow).actualFocusedWindow != null) {
+ 849                             oppositeXWindow = ((XDecoratedPeer) oppositeXWindow).actualFocusedWindow;
+ 850                             oppositeTarget = oppositeXWindow.getTarget();
+ 851                             if (oppositeTarget instanceof Window
+ 852                                 &amp;&amp; oppositeXWindow.isVisible()
+ 853                                 &amp;&amp; oppositeXWindow.isNativelyNonFocusableWindow())
+ 854                             {
+ 855                                 oppositeWindow = ((Window) oppositeTarget);
+ 856                             }
+ 857                         }
+ 858                     }
+ 859                     handleWindowFocusOut(oppositeWindow, xfe.get_serial());
+ 860                 }
+ 861             }
+ 862         }
+ 863     }
+ 864 
+ 865     void setSaveUnder(boolean state) {}
+ 866 
+ 867     public void toFront() {
+ 868         if (isOverrideRedirect() &amp;&amp; mustControlStackPosition) {
+ 869             mustControlStackPosition = false;
+ 870             removeRootPropertyEventDispatcher();
+ 871         }
+ 872         if (isVisible()) {
+ 873             super.toFront();
+ 874             if (isFocusableWindow() &amp;&amp; isAutoRequestFocus() &amp;&amp;
+ 875                 !isModalBlocked() &amp;&amp; !isWithdrawn())
+ 876             {
+ 877                 requestInitialFocus();
+ 878             }
+ 879         } else {
+ 880             setVisible(true);
+ 881         }
+ 882     }
+ 883 
+ 884     public void toBack() {
+ 885         XToolkit.awtLock();
+ 886         try {
+ 887             if(!isOverrideRedirect()) {
+ 888                 XlibWrapper.XLowerWindow(XToolkit.getDisplay(), getWindow());
+ 889             }else{
+ 890                 lowerOverrideRedirect();
+ 891             }
+ 892         }
+ 893         finally {
+ 894             XToolkit.awtUnlock();
+ 895         }
+ 896     }
+ 897     private void lowerOverrideRedirect() {
+ 898         //
+ 899         // make new hash of toplevels of all windows from 'windows' hash.
+ 900         // FIXME: do not call them "toplevel" as it is misleading.
+ 901         //
+ 902         HashSet toplevels = new HashSet();
+ 903         long topl = 0, mytopl = 0;
+ 904 
+ 905         for (XWindowPeer xp : windows) {
+ 906             topl = getToplevelWindow( xp.getWindow() );
+ 907             if( xp.equals( this ) ) {
+ 908                 mytopl = topl;
+ 909             }
+ 910             if( topl &gt; 0 )
+ 911                 toplevels.add( Long.valueOf( topl ) );
+ 912         }
+ 913 
+ 914         //
+ 915         // find in the root's tree:
+ 916         // (1) my toplevel, (2) lowest java toplevel, (3) desktop
+ 917         // We must enforce (3), (1), (2) order, upward;
+ 918         // note that nautilus on the next restacking will do (1),(3),(2).
+ 919         //
+ 920         long laux,     wDesktop = -1, wBottom = -1;
+ 921         int  iMy = -1, iDesktop = -1, iBottom = -1;
+ 922         int i = 0;
+ 923         XQueryTree xqt = new XQueryTree(XToolkit.getDefaultRootWindow());
+ 924         try {
+ 925             if( xqt.execute() &gt; 0 ) {
+ 926                 int nchildren = xqt.get_nchildren();
+ 927                 long children = xqt.get_children();
+ 928                 for(i = 0; i &lt; nchildren; i++) {
+ 929                     laux = Native.getWindow(children, i);
+ 930                     if( laux == mytopl ) {
+ 931                         iMy = i;
+ 932                     }else if( isDesktopWindow( laux ) ) {
+ 933                         // we need topmost desktop of them all.
+ 934                         iDesktop = i;
+ 935                         wDesktop = laux;
+ 936                     }else if(iBottom &lt; 0 &amp;&amp;
+ 937                              toplevels.contains( Long.valueOf(laux) ) &amp;&amp;
+ 938                              laux != mytopl) {
+ 939                         iBottom = i;
+ 940                         wBottom = laux;
+ 941                     }
+ 942                 }
+ 943             }
+ 944 
+ 945             if( (iMy &lt; iBottom || iBottom &lt; 0 )&amp;&amp; iDesktop &lt; iMy)
+ 946                 return; // no action necessary
+ 947 
+ 948             long to_restack = Native.allocateLongArray(2);
+ 949             Native.putLong(to_restack, 0, wBottom);
+ 950             Native.putLong(to_restack, 1,  mytopl);
+ 951             XlibWrapper.XRestackWindows(XToolkit.getDisplay(), to_restack, 2);
+ 952             XlibWrapper.unsafe.freeMemory(to_restack);
+ 953 
+ 954 
+ 955             if( !mustControlStackPosition ) {
+ 956                 mustControlStackPosition = true;
+ 957                 // add root window property listener:
+ 958                 // somebody (eg nautilus desktop) may obscure us
+ 959                 addRootPropertyEventDispatcher();
+ 960             }
+ 961         } finally {
+ 962             xqt.dispose();
+ 963         }
+ 964     }
+ 965     /**
+ 966         Get XID of closest to root window in a given window hierarchy.
+ 967         FIXME: do not call it "toplevel" as it is misleading.
+ 968         On error return 0.
+ 969     */
+ 970     private long getToplevelWindow( long w ) {
+ 971         long wi = w, ret, root;
+ 972         do {
+ 973             ret = wi;
+ 974             XQueryTree qt = new XQueryTree(wi);
+ 975             try {
+ 976                 if (qt.execute() == 0) {
+ 977                     return 0;
+ 978                 }
+ 979                 root = qt.get_root();
+ 980                 wi = qt.get_parent();
+ 981             } finally {
+ 982                 qt.dispose();
+ 983             }
+ 984 
+ 985         } while (wi != root);
+ 986 
+ 987         return ret;
+ 988     }
+ 989 
+ 990     private static boolean isDesktopWindow( long wi ) {
+ 991         return XWM.getWM().isDesktopWindow( wi );
+ 992     }
+ 993 
+ 994     private void updateAlwaysOnTop() {
+ 995         if (log.isLoggable(PlatformLogger.FINE)) {
+ 996             log.fine("Promoting always-on-top state {0}", Boolean.valueOf(alwaysOnTop));
+ 997         }
+ 998         XWM.getWM().setLayer(this,
+ 999                              alwaysOnTop ?
+1000                              XLayerProtocol.LAYER_ALWAYS_ON_TOP :
+1001                              XLayerProtocol.LAYER_NORMAL);
+1002     }
+1003 
+1004     public void setAlwaysOnTop(boolean alwaysOnTop) {
+1005         this.alwaysOnTop = alwaysOnTop;
+1006         updateAlwaysOnTop();
+1007     }
+1008 
+1009     boolean isLocationByPlatform() {
+1010         return locationByPlatform;
+1011     }
+1012 
+1013     private void promoteDefaultPosition() {
+1014         this.locationByPlatform = ((Window)target).isLocationByPlatform();
+1015         if (locationByPlatform) {
+1016             XToolkit.awtLock();
+1017             try {
+1018                 Rectangle bounds = getBounds();
+1019                 XSizeHints hints = getHints();
+1020                 setSizeHints(hints.get_flags() &amp; ~(XUtilConstants.USPosition | XUtilConstants.PPosition),
+1021                              bounds.x, bounds.y, bounds.width, bounds.height);
+1022             } finally {
+1023                 XToolkit.awtUnlock();
+1024             }
+1025         }
+1026     }
+1027 
+1028     public void setVisible(boolean vis) {
+1029         if (!isVisible() &amp;&amp; vis) {
+1030             isBeforeFirstMapNotify = true;
+1031             winAttr.initialFocus = isAutoRequestFocus();
+1032             if (!winAttr.initialFocus) {
+1033                 /*
+1034                  * It's easier and safer to temporary suppress WM_TAKE_FOCUS
+1035                  * protocol itself than to ignore WM_TAKE_FOCUS client message.
+1036                  * Because we will have to make the difference between
+1037                  * the message come after showing and the message come after
+1038                  * activation. Also, on Metacity, for some reason, we have _two_
+1039                  * WM_TAKE_FOCUS client messages when showing a frame/dialog.
+1040                  */
+1041                 suppressWmTakeFocus(true);
+1042             }
+1043         }
+1044         updateFocusability();
+1045         promoteDefaultPosition();
+1046         if (!vis &amp;&amp; warningWindow != null) {
+1047             warningWindow.setSecurityWarningVisible(false, false);
+1048         }
+1049         super.setVisible(vis);
+1050         if (!vis &amp;&amp; !isWithdrawn()) {
+1051             // ICCCM, 4.1.4. Changing Window State:
+1052             // "Iconic -&gt; Withdrawn - The client should unmap the window and follow it
+1053             // with a synthetic UnmapNotify event as described later in this section."
+1054             // The same is true for Normal -&gt; Withdrawn
+1055             XToolkit.awtLock();
+1056             try {
+1057                 XUnmapEvent unmap = new XUnmapEvent();
+1058                 unmap.set_window(window);
+1059                 unmap.set_event(XToolkit.getDefaultRootWindow());
+1060                 unmap.set_type((int)XConstants.UnmapNotify);
+1061                 unmap.set_from_configure(false);
+1062                 XlibWrapper.XSendEvent(XToolkit.getDisplay(), XToolkit.getDefaultRootWindow(),
+1063                         false, XConstants.SubstructureNotifyMask | XConstants.SubstructureRedirectMask,
+1064                         unmap.pData);
+1065                 unmap.dispose();
+1066             }
+1067             finally {
+1068                 XToolkit.awtUnlock();
+1069             }
+1070         }
+1071         // method called somewhere in parent does not generate configure-notify
+1072         // event for override-redirect.
+1073         // Ergo, no reshape and bugs like 5085647 in case setBounds was
+1074         // called before setVisible.
+1075         if (isOverrideRedirect() &amp;&amp; vis) {
+1076             updateChildrenSizes();
+1077         }
+1078         repositionSecurityWarning();
+1079     }
+1080 
+1081     protected void suppressWmTakeFocus(boolean doSuppress) {
+1082     }
+1083 
+1084     final boolean isSimpleWindow() {
+1085         return !(target instanceof Frame || target instanceof Dialog);
+1086     }
+1087     boolean hasWarningWindow() {
+1088         return ((Window)target).getWarningString() != null;
+1089     }
+1090 
+1091     // The height of menu bar window
+1092     int getMenuBarHeight() {
+1093         return 0;
+1094     }
+1095 
+1096     // Called when shell changes its size and requires children windows
+1097     // to update their sizes appropriately
+1098     void updateChildrenSizes() {
+1099     }
+1100 
+1101     public void repositionSecurityWarning() {
+1102         // NOTE: On KWin if the window/border snapping option is enabled,
+1103         // the Java window may be swinging while it's being moved.
+1104         // This doesn't make the application unusable though looks quite ugly.
+1105         // Probobly we need to find some hint to assign to our Security
+1106         // Warning window in order to exclude it from the snapping option.
+1107         // We are not currently aware of existance of such a property.
+1108         if (warningWindow != null) {
+1109             // We can't use the coordinates stored in the XBaseWindow since
+1110             // they are zeros for decorated frames.
+1111             AWTAccessor.ComponentAccessor compAccessor = AWTAccessor.getComponentAccessor();
+1112             int x = compAccessor.getX(target);
+1113             int y = compAccessor.getY(target);
+1114             int width = compAccessor.getWidth(target);
+1115             int height = compAccessor.getHeight(target);
+1116             warningWindow.reposition(x, y, width, height);
+1117         }
+1118     }
+1119 
+1120     @Override
+1121     protected void setMouseAbove(boolean above) {
+1122         super.setMouseAbove(above);
+1123         updateSecurityWarningVisibility();
+1124     }
+1125 
+1126     @Override
+1127     public void setFullScreenExclusiveModeState(boolean state) {
+1128         super.setFullScreenExclusiveModeState(state);
+1129         updateSecurityWarningVisibility();
+1130     }
+1131 
+1132     public void updateSecurityWarningVisibility() {
+1133         if (warningWindow == null) {
+1134             return;
+1135         }
+1136 
+1137         if (!isVisible()) {
+1138             return; // The warning window should already be hidden.
+1139         }
+1140 
+1141         boolean show = false;
+1142 
+1143         if (!isFullScreenExclusiveMode()) {
+1144             int state = getWMState();
+1145 
+1146             // getWMState() always returns 0 (Withdrawn) for simple windows. Hence
+1147             // we ignore the state for such windows.
+1148             if (isVisible() &amp;&amp; (state == XUtilConstants.NormalState || isSimpleWindow())) {
+1149                 if (XKeyboardFocusManagerPeer.getInstance().getCurrentFocusedWindow() ==
+1150                         getTarget())
+1151                 {
+1152                     show = true;
+1153                 }
+1154 
+1155                 if (isMouseAbove() || warningWindow.isMouseAbove())
+1156                 {
+1157                     show = true;
+1158                 }
+1159             }
+1160         }
+1161 
+1162         warningWindow.setSecurityWarningVisible(show, true);
+1163     }
+1164 
+1165     boolean isOverrideRedirect() {
+1166         return XWM.getWMID() == XWM.OPENLOOK_WM ||
+1167             Window.Type.POPUP.equals(getWindowType());
+1168     }
+1169 
+1170     final boolean isOLWMDecorBug() {
+1171         return XWM.getWMID() == XWM.OPENLOOK_WM &amp;&amp;
+1172             winAttr.nativeDecor == false;
+1173     }
+1174 
+1175     public void dispose() {
+1176         if (isGrabbed()) {
+1177             if (grabLog.isLoggable(PlatformLogger.FINE)) {
+1178                 grabLog.fine("Generating UngrabEvent on {0} because of the window disposal", this);
+1179             }
+1180             postEventToEventQueue(new sun.awt.UngrabEvent(getEventSource()));
+1181         }
+1182 
+1183         SunToolkit.awtLock();
+1184 
+1185         try {
+1186             windows.remove(this);
+1187         } finally {
+1188             SunToolkit.awtUnlock();
+1189         }
+1190 
+1191         if (warningWindow != null) {
+1192             warningWindow.destroy();
+1193         }
+1194 
+1195         removeRootPropertyEventDispatcher();
+1196         mustControlStackPosition = false;
+1197         super.dispose();
+1198 
+1199         /*
+1200          * Fix for 6457980.
+1201          * When disposing an owned Window we should implicitly
+1202          * return focus to its decorated owner because it won't
+1203          * receive WM_TAKE_FOCUS.
+1204          */
+1205         if (isSimpleWindow()) {
+1206             if (target == XKeyboardFocusManagerPeer.getInstance().getCurrentFocusedWindow()) {
+1207                 Window owner = getDecoratedOwner((Window)target);
+1208                 ((XWindowPeer)AWTAccessor.getComponentAccessor().getPeer(owner)).requestWindowFocus();
+1209             }
+1210         }
+1211     }
+1212 
+1213     boolean isResizable() {
+1214         return winAttr.isResizable;
+1215     }
+1216 
+1217     public void handleVisibilityEvent(XEvent xev) {
+1218         super.handleVisibilityEvent(xev);
+1219         XVisibilityEvent ve = xev.get_xvisibility();
+1220         winAttr.visibilityState = ve.get_state();
+1221 //         if (ve.get_state() == XlibWrapper.VisibilityUnobscured) {
+1222 //             // raiseInputMethodWindow
+1223 //         }
+1224         repositionSecurityWarning();
+1225     }
+1226 
+1227     void handleRootPropertyNotify(XEvent xev) {
+1228         XPropertyEvent ev = xev.get_xproperty();
+1229         if( mustControlStackPosition &amp;&amp;
+1230             ev.get_atom() == XAtom.get("_NET_CLIENT_LIST_STACKING").getAtom()){
+1231             // Restore stack order unhadled/spoiled by WM or some app (nautilus).
+1232             // As of now, don't use any generic machinery: just
+1233             // do toBack() again.
+1234             if(isOverrideRedirect()) {
+1235                 toBack();
+1236             }
+1237         }
+1238     }
+1239 
+1240     private void removeStartupNotification() {
+1241         if (isStartupNotificationRemoved.getAndSet(true)) {
+1242             return;
+1243         }
+1244 
+1245         final String desktopStartupId = AccessController.doPrivileged(new PrivilegedAction&lt;String&gt;() {
+1246             public String run() {
+1247                 return XToolkit.getEnv("DESKTOP_STARTUP_ID");
+1248             }
+1249         });
+1250         if (desktopStartupId == null) {
+1251             return;
+1252         }
+1253 
+1254         final StringBuilder messageBuilder = new StringBuilder("remove: ID=");
+1255         messageBuilder.append('"');
+1256         for (int i = 0; i &lt; desktopStartupId.length(); i++) {
+1257             if (desktopStartupId.charAt(i) == '"' || desktopStartupId.charAt(i) == '\\') {
+1258                 messageBuilder.append('\\');
+1259             }
+1260             messageBuilder.append(desktopStartupId.charAt(i));
+1261         }
+1262         messageBuilder.append('"');
+1263         messageBuilder.append('\0');
+1264         final byte[] message;
+1265         try {
+1266             message = messageBuilder.toString().getBytes("UTF-8");
+1267         } catch (UnsupportedEncodingException cannotHappen) {
+1268             return;
+1269         }
+1270 
+1271         XClientMessageEvent req = null;
+1272 
+1273         XToolkit.awtLock();
+1274         try {
+1275             final XAtom netStartupInfoBeginAtom = XAtom.get("_NET_STARTUP_INFO_BEGIN");
+1276             final XAtom netStartupInfoAtom = XAtom.get("_NET_STARTUP_INFO");
+1277 
+1278             req = new XClientMessageEvent();
+1279             req.set_type(XConstants.ClientMessage);
+1280             req.set_window(getWindow());
+1281             req.set_message_type(netStartupInfoBeginAtom.getAtom());
+1282             req.set_format(8);
+1283 
+1284             for (int pos = 0; pos &lt; message.length; pos += 20) {
+1285                 final int msglen = Math.min(message.length - pos, 20);
+1286                 int i = 0;
+1287                 for (; i &lt; msglen; i++) {
+1288                     XlibWrapper.unsafe.putByte(req.get_data() + i, message[pos + i]);
+1289                 }
+1290                 for (; i &lt; 20; i++) {
+1291                     XlibWrapper.unsafe.putByte(req.get_data() + i, (byte)0);
+1292                 }
+1293                 XlibWrapper.XSendEvent(XToolkit.getDisplay(),
+1294                     XlibWrapper.RootWindow(XToolkit.getDisplay(), getScreenNumber()),
+1295                     false,
+1296                     XConstants.PropertyChangeMask,
+1297                     req.pData);
+1298                 req.set_message_type(netStartupInfoAtom.getAtom());
+1299             }
+1300         } finally {
+1301             XToolkit.awtUnlock();
+1302             if (req != null) {
+1303                 req.dispose();
+1304             }
+1305         }
+1306     }
+1307 
+1308     public void handleMapNotifyEvent(XEvent xev) {
+1309         removeStartupNotification();
+1310 
+1311         // See 6480534.
+1312         isUnhiding |= isWMStateNetHidden();
+1313 
+1314         super.handleMapNotifyEvent(xev);
+1315         if (!winAttr.initialFocus) {
+1316             suppressWmTakeFocus(false); // restore the protocol.
+1317             /*
+1318              * For some reason, on Metacity, a frame/dialog being shown
+1319              * without WM_TAKE_FOCUS protocol doesn't get moved to the front.
+1320              * So, we do it evidently.
+1321              */
+1322             XToolkit.awtLock();
+1323             try {
+1324                 XlibWrapper.XRaiseWindow(XToolkit.getDisplay(), getWindow());
+1325             } finally {
+1326                 XToolkit.awtUnlock();
+1327             }
+1328         }
+1329         if (shouldFocusOnMapNotify()) {
+1330             focusLog.fine("Automatically request focus on window");
+1331             requestInitialFocus();
+1332         }
+1333         isUnhiding = false;
+1334         isBeforeFirstMapNotify = false;
+1335         updateAlwaysOnTop();
+1336 
+1337         synchronized (getStateLock()) {
+1338             if (!isMapped) {
+1339                 isMapped = true;
+1340             }
+1341         }
+1342     }
+1343 
+1344     public void handleUnmapNotifyEvent(XEvent xev) {
+1345         super.handleUnmapNotifyEvent(xev);
+1346 
+1347         // On Metacity UnmapNotify comes before PropertyNotify (for _NET_WM_STATE_HIDDEN).
+1348         // So we also check for the property later in MapNotify. See 6480534.
+1349         isUnhiding |= isWMStateNetHidden();
+1350 
+1351         synchronized (getStateLock()) {
+1352             if (isMapped) {
+1353                 isMapped = false;
+1354             }
+1355         }
+1356     }
+1357 
+1358     private boolean shouldFocusOnMapNotify() {
+1359         boolean res = false;
+1360 
+1361         if (isBeforeFirstMapNotify) {
+1362             res = (winAttr.initialFocus ||          // Window.autoRequestFocus
+1363                    isFocusedWindowModalBlocker());
+1364         } else {
+1365             res = isUnhiding;                       // Unhiding
+1366         }
+1367         res = res &amp;&amp;
+1368             isFocusableWindow() &amp;&amp;                  // General focusability
+1369             !isModalBlocked();                      // Modality
+1370 
+1371         return res;
+1372     }
+1373 
+1374     protected boolean isWMStateNetHidden() {
+1375         XNETProtocol protocol = XWM.getWM().getNETProtocol();
+1376         return (protocol != null &amp;&amp; protocol.isWMStateNetHidden(this));
+1377     }
+1378 
+1379     protected void requestInitialFocus() {
+1380         requestXFocus();
+1381     }
+1382 
+1383     public void addToplevelStateListener(ToplevelStateListener l){
+1384         toplevelStateListeners.add(l);
+1385     }
+1386 
+1387     public void removeToplevelStateListener(ToplevelStateListener l){
+1388         toplevelStateListeners.remove(l);
+1389     }
+1390 
+1391     /**
+1392      * Override this methods to get notifications when top-level window state changes. The state is
+1393      * meant in terms of ICCCM: WithdrawnState, IconicState, NormalState
+1394      */
+1395     @Override
+1396     protected void stateChanged(long time, int oldState, int newState) {
+1397         // Fix for 6401700, 6412803
+1398         // If this window is modal blocked, it is put into the transient_for
+1399         // chain using prevTransientFor and nextTransientFor hints. However,
+1400         // the real WM_TRANSIENT_FOR hint shouldn't be set for windows in
+1401         // different WM states (except for owner-window relationship), so
+1402         // if the window changes its state, its real WM_TRANSIENT_FOR hint
+1403         // should be updated accordingly.
+1404         updateTransientFor();
+1405 
+1406         for (ToplevelStateListener topLevelListenerTmp : toplevelStateListeners) {
+1407             topLevelListenerTmp.stateChangedICCCM(oldState, newState);
+1408         }
+1409 
+1410         updateSecurityWarningVisibility();
+1411     }
+1412 
+1413     boolean isWithdrawn() {
+1414         return getWMState() == XUtilConstants.WithdrawnState;
+1415     }
+1416 
+1417     boolean hasDecorations(int decor) {
+1418         if (!winAttr.nativeDecor) {
+1419             return false;
+1420         }
+1421         else {
+1422             int myDecor = winAttr.decorations;
+1423             boolean hasBits = ((myDecor &amp; decor) == decor);
+1424             if ((myDecor &amp; XWindowAttributesData.AWT_DECOR_ALL) != 0)
+1425                 return !hasBits;
+1426             else
+1427                 return hasBits;
+1428         }
+1429     }
+1430 
+1431     void setReparented(boolean newValue) {
+1432         super.setReparented(newValue);
+1433         XToolkit.awtLock();
+1434         try {
+1435             if (isReparented() &amp;&amp; delayedModalBlocking) {
+1436                 addToTransientFors((XDialogPeer) AWTAccessor.getComponentAccessor().getPeer(modalBlocker));
+1437                 delayedModalBlocking = false;
+1438             }
+1439         } finally {
+1440             XToolkit.awtUnlock();
+1441         }
+1442     }
+1443 
+1444     /*
+1445      * Returns a Vector of all Java top-level windows,
+1446      * sorted by their current Z-order
+1447      */
+1448     static Vector&lt;XWindowPeer&gt; collectJavaToplevels() {
+1449         Vector&lt;XWindowPeer&gt; javaToplevels = new Vector&lt;XWindowPeer&gt;();
+1450         Vector&lt;Long&gt; v = new Vector&lt;Long&gt;();
+1451         X11GraphicsEnvironment ge =
+1452             (X11GraphicsEnvironment)GraphicsEnvironment.getLocalGraphicsEnvironment();
+1453         GraphicsDevice[] gds = ge.getScreenDevices();
+1454         if (!ge.runningXinerama() &amp;&amp; (gds.length &gt; 1)) {
+1455             for (GraphicsDevice gd : gds) {
+1456                 int screen = ((X11GraphicsDevice)gd).getScreen();
+1457                 long rootWindow = XlibWrapper.RootWindow(XToolkit.getDisplay(), screen);
+1458                 v.add(rootWindow);
+1459             }
+1460         } else {
+1461             v.add(XToolkit.getDefaultRootWindow());
+1462         }
+1463         final int windowsCount = windows.size();
+1464         while ((v.size() &gt; 0) &amp;&amp; (javaToplevels.size() &lt; windowsCount)) {
+1465             long win = v.remove(0);
+1466             XQueryTree qt = new XQueryTree(win);
+1467             try {
+1468                 if (qt.execute() != 0) {
+1469                     int nchildren = qt.get_nchildren();
+1470                     long children = qt.get_children();
+1471                     // XQueryTree returns window children ordered by z-order
+1472                     for (int i = 0; i &lt; nchildren; i++) {
+1473                         long child = Native.getWindow(children, i);
+1474                         XBaseWindow childWindow = XToolkit.windowToXWindow(child);
+1475                         // filter out Java non-toplevels
+1476                         if ((childWindow != null) &amp;&amp; !(childWindow instanceof XWindowPeer)) {
+1477                             continue;
+1478                         } else {
+1479                             v.add(child);
+1480                         }
+1481                         if (childWindow instanceof XWindowPeer) {
+1482                             XWindowPeer np = (XWindowPeer)childWindow;
+1483                             javaToplevels.add(np);
+1484                             // XQueryTree returns windows sorted by their z-order. However,
+1485                             // if WM has not handled transient for hint for a child window,
+1486                             // it may appear in javaToplevels before its owner. Move such
+1487                             // children after their owners.
+1488                             int k = 0;
+1489                             XWindowPeer toCheck = javaToplevels.get(k);
+1490                             while (toCheck != np) {
+1491                                 XWindowPeer toCheckOwnerPeer = toCheck.getOwnerPeer();
+1492                                 if (toCheckOwnerPeer == np) {
+1493                                     javaToplevels.remove(k);
+1494                                     javaToplevels.add(toCheck);
+1495                                 } else {
+1496                                     k++;
+1497                                 }
+1498                                 toCheck = javaToplevels.get(k);
+1499                             }
+1500                         }
+1501                     }
+1502                 }
+1503             } finally {
+1504                 qt.dispose();
+1505             }
+1506         }
+1507         return javaToplevels;
+1508     }
+1509 
+1510     public void setModalBlocked(Dialog d, boolean blocked) {
+1511         setModalBlocked(d, blocked, null);
+1512     }
+1513     public void setModalBlocked(Dialog d, boolean blocked,
+1514                                 Vector&lt;XWindowPeer&gt; javaToplevels)
+1515     {
+1516         XToolkit.awtLock();
+1517         try {
+1518             // State lock should always be after awtLock
+1519             synchronized(getStateLock()) {
+1520                 XDialogPeer blockerPeer = (XDialogPeer) AWTAccessor.getComponentAccessor().getPeer(d);
+1521                 if (blocked) {
+1522                     if (log.isLoggable(PlatformLogger.FINE)) {
+1523                         log.fine("{0} is blocked by {1}", this, blockerPeer);
+1524                     }
+1525                     modalBlocker = d;
+1526 
+1527                     if (isReparented() || XWM.isNonReparentingWM()) {
+1528                         addToTransientFors(blockerPeer, javaToplevels);
+1529                     } else {
+1530                         delayedModalBlocking = true;
+1531                     }
+1532                 } else {
+1533                     if (d != modalBlocker) {
+1534                         throw new IllegalStateException("Trying to unblock window blocked by another dialog");
+1535                     }
+1536                     modalBlocker = null;
+1537 
+1538                     if (isReparented() || XWM.isNonReparentingWM()) {
+1539                         removeFromTransientFors();
+1540                     } else {
+1541                         delayedModalBlocking = false;
+1542                     }
+1543                 }
+1544 
+1545                 updateTransientFor();
+1546             }
+1547         } finally {
+1548             XToolkit.awtUnlock();
+1549         }
+1550     }
+1551 
+1552     /*
+1553      * Sets the TRANSIENT_FOR hint to the given top-level window. This
+1554      *  method is used when a window is modal blocked/unblocked or
+1555      *  changed its state from/to NormalState to/from other states.
+1556      * If window or transientForWindow are embedded frames, the containing
+1557      *  top-level windows are used.
+1558      *
+1559      * @param window specifies the top-level window that the hint
+1560      *  is to be set to
+1561      * @param transientForWindow the top-level window
+1562      * @param updateChain specifies if next/prevTransientFor fields are
+1563      *  to be updated
+1564      * @param allStates if set to &lt;code&gt;true&lt;/code&gt; then TRANSIENT_FOR hint
+1565      *  is set regardless of the state of window and transientForWindow,
+1566      *  otherwise it is set only if both are in the same state
+1567      */
+1568     static void setToplevelTransientFor(XWindowPeer window, XWindowPeer transientForWindow,
+1569                                                 boolean updateChain, boolean allStates)
+1570     {
+1571         if ((window == null) || (transientForWindow == null)) {
+1572             return;
+1573         }
+1574         if (updateChain) {
+1575             window.prevTransientFor = transientForWindow;
+1576             transientForWindow.nextTransientFor = window;
+1577         }
+1578         if (window.curRealTransientFor == transientForWindow) {
+1579             return;
+1580         }
+1581         if (!allStates &amp;&amp; (window.getWMState() != transientForWindow.getWMState())) {
+1582             return;
+1583         }
+1584         if (window.getScreenNumber() != transientForWindow.getScreenNumber()) {
+1585             return;
+1586         }
+1587         long bpw = window.getWindow();
+1588         while (!XlibUtil.isToplevelWindow(bpw) &amp;&amp; !XlibUtil.isXAWTToplevelWindow(bpw)) {
+1589             bpw = XlibUtil.getParentWindow(bpw);
+1590         }
+1591         long tpw = transientForWindow.getWindow();
+1592         while (!XlibUtil.isToplevelWindow(tpw) &amp;&amp; !XlibUtil.isXAWTToplevelWindow(tpw)) {
+1593             tpw = XlibUtil.getParentWindow(tpw);
+1594         }
+1595         XlibWrapper.XSetTransientFor(XToolkit.getDisplay(), bpw, tpw);
+1596         window.curRealTransientFor = transientForWindow;
+1597     }
+1598 
+1599     /*
+1600      * This method does nothing if this window is not blocked by any modal dialog.
+1601      * For modal blocked windows this method looks up for the nearest
+1602      *  prevTransiendFor window that is in the same state (Normal/Iconified/Withdrawn)
+1603      *  as this one and makes this window transient for it. The same operation is
+1604      *  performed for nextTransientFor window.
+1605      * Values of prevTransientFor and nextTransientFor fields are not changed.
+1606      */
+1607     void updateTransientFor() {
+1608         int state = getWMState();
+1609         XWindowPeer p = prevTransientFor;
+1610         while ((p != null) &amp;&amp; ((p.getWMState() != state) || (p.getScreenNumber() != getScreenNumber()))) {
+1611             p = p.prevTransientFor;
+1612         }
+1613         if (p != null) {
+1614             setToplevelTransientFor(this, p, false, false);
+1615         } else {
+1616             restoreTransientFor(this);
+1617         }
+1618         XWindowPeer n = nextTransientFor;
+1619         while ((n != null) &amp;&amp; ((n.getWMState() != state) || (n.getScreenNumber() != getScreenNumber()))) {
+1620             n = n.nextTransientFor;
+1621         }
+1622         if (n != null) {
+1623             setToplevelTransientFor(n, this, false, false);
+1624         }
+1625     }
+1626 
+1627     /*
+1628      * Removes the TRANSIENT_FOR hint from the given top-level window.
+1629      * If window or transientForWindow are embedded frames, the containing
+1630      *  top-level windows are used.
+1631      *
+1632      * @param window specifies the top-level window that the hint
+1633      *  is to be removed from
+1634      */
+1635     private static void removeTransientForHint(XWindowPeer window) {
+1636         XAtom XA_WM_TRANSIENT_FOR = XAtom.get(XAtom.XA_WM_TRANSIENT_FOR);
+1637         long bpw = window.getWindow();
+1638         while (!XlibUtil.isToplevelWindow(bpw) &amp;&amp; !XlibUtil.isXAWTToplevelWindow(bpw)) {
+1639             bpw = XlibUtil.getParentWindow(bpw);
+1640         }
+1641         XlibWrapper.XDeleteProperty(XToolkit.getDisplay(), bpw, XA_WM_TRANSIENT_FOR.getAtom());
+1642         window.curRealTransientFor = null;
+1643     }
+1644 
+1645     /*
+1646      * When a modal dialog is shown, all its blocked windows are lined up into
+1647      *  a chain in such a way that each window is a transient_for window for
+1648      *  the next one. That allows us to keep the modal dialog above all its
+1649      *  blocked windows (even if there are some another modal dialogs between
+1650      *  them).
+1651      * This method adds this top-level window to the chain of the given modal
+1652      *  dialog. To keep the current relative z-order, we should use the
+1653      *  XQueryTree to find the place to insert this window to. As each window
+1654      *  can be blocked by only one modal dialog (such checks are performed in
+1655      *  shared code), both this and blockerPeer are on the top of their chains
+1656      *  (chains may be empty).
+1657      * If this window is a modal dialog and has its own chain, these chains are
+1658      *  merged according to the current z-order (XQueryTree is used again).
+1659      *  Below are some simple examples (z-order is from left to right, -- is
+1660      *  modal blocking).
+1661      *
+1662      * Example 0:
+1663      *     T (current chain of this, no windows are blocked by this)
+1664      *  W1---B (current chain of blockerPeer, W2 is blocked by blockerPeer)
+1665      *  Result is:
+1666      *  W1-T-B (merged chain, all the windows are blocked by blockerPeer)
+1667      *
+1668      * Example 1:
+1669      *  W1-T (current chain of this, W1 is blocked by this)
+1670      *       W2-B (current chain of blockerPeer, W2 is blocked by blockerPeer)
+1671      *  Result is:
+1672      *  W1-T-W2-B (merged chain, all the windows are blocked by blockerPeer)
+1673      *
+1674      * Example 2:
+1675      *  W1----T (current chain of this, W1 is blocked by this)
+1676      *     W2---B (current chain of blockerPeer, W2 is blocked by blockerPeer)
+1677      *  Result is:
+1678      *  W1-W2-T-B (merged chain, all the windows are blocked by blockerPeer)
+1679      *
+1680      * This method should be called under the AWT lock.
+1681      *
+1682      * @see #removeFromTransientFors
+1683      * @see #setModalBlocked
+1684      */
+1685     private void addToTransientFors(XDialogPeer blockerPeer) {
+1686         addToTransientFors(blockerPeer, null);
+1687     }
+1688 
+1689     private void addToTransientFors(XDialogPeer blockerPeer, Vector&lt;XWindowPeer&gt; javaToplevels)
+1690     {
+1691         // blockerPeer chain iterator
+1692         XWindowPeer blockerChain = blockerPeer;
+1693         while (blockerChain.prevTransientFor != null) {
+1694             blockerChain = blockerChain.prevTransientFor;
+1695         }
+1696         // this window chain iterator
+1697         // each window can be blocked no more than once, so this window
+1698         //   is on top of its chain
+1699         XWindowPeer thisChain = this;
+1700         while (thisChain.prevTransientFor != null) {
+1701             thisChain = thisChain.prevTransientFor;
+1702         }
+1703         // if there are no windows blocked by modalBlocker, simply add this window
+1704         //  and its chain to blocker's chain
+1705         if (blockerChain == blockerPeer) {
+1706             setToplevelTransientFor(blockerPeer, this, true, false);
+1707         } else {
+1708             // Collect all the Java top-levels, if required
+1709             if (javaToplevels == null) {
+1710                 javaToplevels = collectJavaToplevels();
+1711             }
+1712             // merged chain tail
+1713             XWindowPeer mergedChain = null;
+1714             for (XWindowPeer w : javaToplevels) {
+1715                 XWindowPeer prevMergedChain = mergedChain;
+1716                 if (w == thisChain) {
+1717                     if (thisChain == this) {
+1718                         if (prevMergedChain != null) {
+1719                             setToplevelTransientFor(this, prevMergedChain, true, false);
+1720                         }
+1721                         setToplevelTransientFor(blockerChain, this, true, false);
+1722                         break;
+1723                     } else {
+1724                         mergedChain = thisChain;
+1725                         thisChain = thisChain.nextTransientFor;
+1726                     }
+1727                 } else if (w == blockerChain) {
+1728                     mergedChain = blockerChain;
+1729                     blockerChain = blockerChain.nextTransientFor;
+1730                 } else {
+1731                     continue;
+1732                 }
+1733                 if (prevMergedChain == null) {
+1734                     mergedChain.prevTransientFor = null;
+1735                 } else {
+1736                     setToplevelTransientFor(mergedChain, prevMergedChain, true, false);
+1737                     mergedChain.updateTransientFor();
+1738                 }
+1739                 if (blockerChain == blockerPeer) {
+1740                     setToplevelTransientFor(thisChain, mergedChain, true, false);
+1741                     setToplevelTransientFor(blockerChain, this, true, false);
+1742                     break;
+1743                 }
+1744             }
+1745         }
+1746 
+1747         XToolkit.XSync();
+1748     }
+1749 
+1750     static void restoreTransientFor(XWindowPeer window) {
+1751         XWindowPeer ownerPeer = window.getOwnerPeer();
+1752         if (ownerPeer != null) {
+1753             setToplevelTransientFor(window, ownerPeer, false, true);
+1754         } else {
+1755             removeTransientForHint(window);
+1756         }
+1757     }
+1758 
+1759     /*
+1760      * When a window is modally unblocked, it should be removed from its blocker
+1761      *  chain, see {@link #addToTransientFor addToTransientFors} method for the
+1762      *  chain definition.
+1763      * The problem is that we cannot simply restore window's original
+1764      *  TRANSIENT_FOR hint (if any) and link prevTransientFor and
+1765      *  nextTransientFor together as the whole chain could be created as a merge
+1766      *  of two other chains in addToTransientFors. In that case, if this window is
+1767      *  a modal dialog, it would lost all its own chain, if we simply exclude it
+1768      *  from the chain.
+1769      * The correct behaviour of this method should be to split the chain, this
+1770      *  window is currently in, into two chains. First chain is this window own
+1771      *  chain (i. e. all the windows blocked by this one, directly or indirectly),
+1772      *  if any, and the rest windows from the current chain.
+1773      *
+1774      * Example:
+1775      *  Original state:
+1776      *   W1-B1 (window W1 is blocked by B1)
+1777      *   W2-B2 (window W2 is blocked by B2)
+1778      *  B3 is shown and blocks B1 and B2:
+1779      *   W1-W2-B1-B2-B3 (a single chain after B1.addToTransientFors() and B2.addToTransientFors())
+1780      *  If we then unblock B1, the state should be:
+1781      *   W1-B1 (window W1 is blocked by B1)
+1782      *   W2-B2-B3 (window W2 is blocked by B2 and B2 is blocked by B3)
+1783      *
+1784      * This method should be called under the AWT lock.
+1785      *
+1786      * @see #addToTransientFors
+1787      * @see #setModalBlocked
+1788      */
+1789     private void removeFromTransientFors() {
+1790         // the head of the chain of this window
+1791         XWindowPeer thisChain = this;
+1792         // the head of the current chain
+1793         // nextTransientFor is always not null as this window is in the chain
+1794         XWindowPeer otherChain = nextTransientFor;
+1795         // the set of blockers in this chain: if this dialog blocks some other
+1796         // modal dialogs, their blocked windows should stay in this dialog's chain
+1797         Set&lt;XWindowPeer&gt; thisChainBlockers = new HashSet&lt;XWindowPeer&gt;();
+1798         thisChainBlockers.add(this);
+1799         // current chain iterator in the order from next to prev
+1800         XWindowPeer chainToSplit = prevTransientFor;
+1801         while (chainToSplit != null) {
+1802             XWindowPeer blocker = (XWindowPeer) AWTAccessor.getComponentAccessor().getPeer(chainToSplit.modalBlocker);
+1803             if (thisChainBlockers.contains(blocker)) {
+1804                 // add to this dialog's chain
+1805                 setToplevelTransientFor(thisChain, chainToSplit, true, false);
+1806                 thisChain = chainToSplit;
+1807                 thisChainBlockers.add(chainToSplit);
+1808             } else {
+1809                 // leave in the current chain
+1810                 setToplevelTransientFor(otherChain, chainToSplit, true, false);
+1811                 otherChain = chainToSplit;
+1812             }
+1813             chainToSplit = chainToSplit.prevTransientFor;
+1814         }
+1815         restoreTransientFor(thisChain);
+1816         thisChain.prevTransientFor = null;
+1817         restoreTransientFor(otherChain);
+1818         otherChain.prevTransientFor = null;
+1819         nextTransientFor = null;
+1820 
+1821         XToolkit.XSync();
+1822     }
+1823 
+1824     boolean isModalBlocked() {
+1825         return modalBlocker != null;
+1826     }
+1827 
+1828     static Window getDecoratedOwner(Window window) {
+1829         while ((null != window) &amp;&amp; !(window instanceof Frame || window instanceof Dialog)) {
+1830             window = (Window) AWTAccessor.getComponentAccessor().getParent(window);
+1831         }
+1832         return window;
+1833     }
+1834 
+1835     public boolean requestWindowFocus(XWindowPeer actualFocusedWindow) {
+1836         setActualFocusedWindow(actualFocusedWindow);
+1837         return requestWindowFocus();
+1838     }
+1839 
+1840     public boolean requestWindowFocus() {
+1841         return requestWindowFocus(0, false);
+1842     }
+1843 
+1844     public boolean requestWindowFocus(long time, boolean timeProvided) {
+1845         focusLog.fine("Request for window focus");
+1846         // If this is Frame or Dialog we can't assure focus request success - but we still can try
+1847         // If this is Window and its owner Frame is active we can be sure request succedded.
+1848         Window ownerWindow  = XWindowPeer.getDecoratedOwner((Window)target);
+1849         Window focusedWindow = XKeyboardFocusManagerPeer.getInstance().getCurrentFocusedWindow();
+1850         Window activeWindow = XWindowPeer.getDecoratedOwner(focusedWindow);
+1851 
+1852         if (isWMStateNetHidden()) {
+1853             focusLog.fine("The window is unmapped, so rejecting the request");
+1854             return false;
+1855         }
+1856         if (activeWindow == ownerWindow) {
+1857             focusLog.fine("Parent window is active - generating focus for this window");
+1858             handleWindowFocusInSync(-1);
+1859             return true;
+1860         }
+1861         focusLog.fine("Parent window is not active");
+1862 
+1863         XDecoratedPeer wpeer = (XDecoratedPeer)AWTAccessor.getComponentAccessor().getPeer(ownerWindow);
+1864         if (wpeer != null &amp;&amp; wpeer.requestWindowFocus(this, time, timeProvided)) {
+1865             focusLog.fine("Parent window accepted focus request - generating focus for this window");
+1866             return true;
+1867         }
+1868         focusLog.fine("Denied - parent window is not active and didn't accept focus request");
+1869         return false;
+1870     }
+1871 
+1872     // This method is to be overriden in XDecoratedPeer.
+1873     void setActualFocusedWindow(XWindowPeer actualFocusedWindow) {
+1874     }
+1875 
+1876     /**
+1877      * Applies the current window type.
+1878      */
+1879     private void applyWindowType() {
+1880         XNETProtocol protocol = XWM.getWM().getNETProtocol();
+1881         if (protocol == null) {
+1882             return;
+1883         }
+1884 
+1885         XAtom typeAtom = null;
+1886 
+1887         switch (getWindowType())
+1888         {
+1889             case NORMAL:
+1890                 typeAtom = (ownerPeer == null) ? protocol.XA_NET_WM_WINDOW_TYPE_NORMAL : protocol.XA_NET_WM_WINDOW_TYPE_DIALOG;
+1891                 break;
+1892             case UTILITY:
+1893                 typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_UTILITY;
+1894                 break;
+1895             case POPUP:
+1896                 typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_POPUP_MENU;
+1897                 break;
+1898         }
+1899 
+1900         if (typeAtom != null) {
+1901             XAtomList wtype = new XAtomList();
+1902             wtype.add(typeAtom);
+1903             protocol.XA_NET_WM_WINDOW_TYPE.
+1904                 setAtomListProperty(getWindow(), wtype);
+1905         } else {
+1906             protocol.XA_NET_WM_WINDOW_TYPE.
+1907                 DeleteProperty(getWindow());
+1908         }
+1909     }
+1910 
+1911     @Override
+1912     public void xSetVisible(boolean visible) {
+1913         if (log.isLoggable(PlatformLogger.FINE)) {
+1914             log.fine("Setting visible on " + this + " to " + visible);
+1915         }
+1916         XToolkit.awtLock();
+1917         try {
+1918             this.visible = visible;
+1919             if (visible) {
+1920                 applyWindowType();
+1921                 XlibWrapper.XMapRaised(XToolkit.getDisplay(), getWindow());
+1922             } else {
+1923                 XlibWrapper.XUnmapWindow(XToolkit.getDisplay(), getWindow());
+1924             }
+1925             XlibWrapper.XFlush(XToolkit.getDisplay());
+1926         }
+1927         finally {
+1928             XToolkit.awtUnlock();
+1929         }
+1930     }
+1931 
+1932     // should be synchronized on awtLock
+1933     private int dropTargetCount = 0;
+1934 
+1935     public void addDropTarget() {
+1936         XToolkit.awtLock();
+1937         try {
+1938             if (dropTargetCount == 0) {
+1939                 long window = getWindow();
+1940                 if (window != 0) {
+1941                     XDropTargetRegistry.getRegistry().registerDropSite(window);
+1942                 }
+1943             }
+1944             dropTargetCount++;
+1945         } finally {
+1946             XToolkit.awtUnlock();
+1947         }
+1948     }
+1949 
+1950     public void removeDropTarget() {
+1951         XToolkit.awtLock();
+1952         try {
+1953             dropTargetCount--;
+1954             if (dropTargetCount == 0) {
+1955                 long window = getWindow();
+1956                 if (window != 0) {
+1957                     XDropTargetRegistry.getRegistry().unregisterDropSite(window);
+1958                 }
+1959             }
+1960         } finally {
+1961             XToolkit.awtUnlock();
+1962         }
+1963     }
+1964     void addRootPropertyEventDispatcher() {
+1965         if( rootPropertyEventDispatcher == null ) {
+1966             rootPropertyEventDispatcher = new XEventDispatcher() {
+1967                 public void dispatchEvent(XEvent ev) {
+1968                     if( ev.get_type() == XConstants.PropertyNotify ) {
+1969                         handleRootPropertyNotify( ev );
+1970                     }
+1971                 }
+1972             };
+1973             XlibWrapper.XSelectInput( XToolkit.getDisplay(),
+1974                                       XToolkit.getDefaultRootWindow(),
+1975                                       XConstants.PropertyChangeMask);
+1976             XToolkit.addEventDispatcher(XToolkit.getDefaultRootWindow(),
+1977                                                 rootPropertyEventDispatcher);
+1978         }
+1979     }
+1980     void removeRootPropertyEventDispatcher() {
+1981         if( rootPropertyEventDispatcher != null ) {
+1982             XToolkit.removeEventDispatcher(XToolkit.getDefaultRootWindow(),
+1983                                                 rootPropertyEventDispatcher);
+1984             rootPropertyEventDispatcher = null;
+1985         }
+1986     }
+1987     public void updateFocusableWindowState() {
+1988         cachedFocusableWindow = isFocusableWindow();
+1989     }
+1990 
+1991     XAtom XA_NET_WM_STATE;
+1992     XAtomList net_wm_state;
+1993     public XAtomList getNETWMState() {
+1994         if (net_wm_state == null) {
+1995             net_wm_state = XA_NET_WM_STATE.getAtomListPropertyList(this);
+1996         }
+1997         return net_wm_state;
+1998     }
+1999 
+2000     public void setNETWMState(XAtomList state) {
+2001         net_wm_state = state;
+2002         if (state != null) {
+2003             XA_NET_WM_STATE.setAtomListProperty(this, state);
+2004         }
+2005     }
+2006 
+2007     public PropMwmHints getMWMHints() {
+2008         if (mwm_hints == null) {
+2009             mwm_hints = new PropMwmHints();
+2010             if (!XWM.XA_MWM_HINTS.getAtomData(getWindow(), mwm_hints.pData, MWMConstants.PROP_MWM_HINTS_ELEMENTS)) {
+2011                 mwm_hints.zero();
+2012             }
+2013         }
+2014         return mwm_hints;
+2015     }
+2016 
+2017     public void setMWMHints(PropMwmHints hints) {
+2018         mwm_hints = hints;
+2019         if (hints != null) {
+2020             XWM.XA_MWM_HINTS.setAtomData(getWindow(), mwm_hints.pData, MWMConstants.PROP_MWM_HINTS_ELEMENTS);
+2021         }
+2022     }
+2023 
+2024     protected void updateDropTarget() {
+2025         XToolkit.awtLock();
+2026         try {
+2027             if (dropTargetCount &gt; 0) {
+2028                 long window = getWindow();
+2029                 if (window != 0) {
+2030                     XDropTargetRegistry.getRegistry().unregisterDropSite(window);
+2031                     XDropTargetRegistry.getRegistry().registerDropSite(window);
+2032                 }
+2033             }
+2034         } finally {
+2035             XToolkit.awtUnlock();
+2036         }
+2037     }
+2038 
+2039     public void setGrab(boolean grab) {
+2040         this.grab = grab;
+2041         if (grab) {
+2042             pressTarget = this;
+2043             grabInput();
+2044         } else {
+2045             ungrabInput();
+2046         }
+2047     }
+2048 
+2049     public boolean isGrabbed() {
+2050         return grab &amp;&amp; XAwtState.getGrabWindow() == this;
+2051     }
+2052 
+2053     public void handleXCrossingEvent(XEvent xev) {
+2054         XCrossingEvent xce = xev.get_xcrossing();
+2055         if (grabLog.isLoggable(PlatformLogger.FINE)) {
+2056             grabLog.fine("{0}, when grabbed {1}, contains {2}",
+2057                          xce, isGrabbed(), containsGlobal(xce.get_x_root(), xce.get_y_root()));
+2058         }
+2059         if (isGrabbed()) {
+2060             // When window is grabbed, all events are dispatched to
+2061             // it.  Retarget them to the corresponding windows (notice
+2062             // that XBaseWindow.dispatchEvent does the opposite
+2063             // translation)
+2064             // Note that we need to retarget XCrossingEvents to content window
+2065             // since it generates MOUSE_ENTERED/MOUSE_EXITED for frame and dialog.
+2066             // (fix for 6390326)
+2067             XBaseWindow target = XToolkit.windowToXWindow(xce.get_window());
+2068             if (grabLog.isLoggable(PlatformLogger.FINER)) {
+2069                 grabLog.finer("  -  Grab event target {0}", target);
+2070             }
+2071             if (target != null &amp;&amp; target != this) {
+2072                 target.dispatchEvent(xev);
+2073                 return;
+2074             }
+2075         }
+2076         super.handleXCrossingEvent(xev);
+2077     }
+2078 
+2079     public void handleMotionNotify(XEvent xev) {
+2080         XMotionEvent xme = xev.get_xmotion();
+2081         if (grabLog.isLoggable(PlatformLogger.FINER)) {
+2082             grabLog.finer("{0}, when grabbed {1}, contains {2}",
+2083                           xme, isGrabbed(), containsGlobal(xme.get_x_root(), xme.get_y_root()));
+2084         }
+2085         if (isGrabbed()) {
+2086             boolean dragging = false;
+2087             final int buttonsNumber = XToolkit.getNumberOfButtonsForMask();
+2088 
+2089             for (int i = 0; i &lt; buttonsNumber; i++){
+2090                 // here is the bug in WM: extra buttons doesn't have state!=0 as they should.
+2091                 if ((i != 4) &amp;&amp; (i != 5)){
+2092                     dragging = dragging || ((xme.get_state() &amp; XlibUtil.getButtonMask(i + 1)) != 0);
+2093                 }
+2094             }
+2095             // When window is grabbed, all events are dispatched to
+2096             // it.  Retarget them to the corresponding windows (notice
+2097             // that XBaseWindow.dispatchEvent does the opposite
+2098             // translation)
+2099             XBaseWindow target = XToolkit.windowToXWindow(xme.get_window());
+2100             if (dragging &amp;&amp; pressTarget != target) {
+2101                 // for some reasons if we grab input MotionNotify for drag is reported with target
+2102                 // to underlying window, not to window on which we have initiated drag
+2103                 // so we need to retarget them.  Here I use simplified logic which retarget all
+2104                 // such events to source of mouse press (or the grabber).  It helps with fix for 6390326.
+2105                 // So, I do not want to implement complicated logic for better retargeting.
+2106                 target = pressTarget.isVisible() ? pressTarget : this;
+2107                 xme.set_window(target.getWindow());
+2108                 Point localCoord = target.toLocal(xme.get_x_root(), xme.get_y_root());
+2109                 xme.set_x(localCoord.x);
+2110                 xme.set_y(localCoord.y);
+2111             }
+2112             if (grabLog.isLoggable(PlatformLogger.FINER)) {
+2113                 grabLog.finer("  -  Grab event target {0}", target);
+2114             }
+2115             if (target != null) {
+2116                 if (target != getContentXWindow() &amp;&amp; target != this) {
+2117                     target.dispatchEvent(xev);
+2118                     return;
+2119                 }
+2120             }
+2121 
+2122             // note that we need to pass dragging events to the grabber (6390326)
+2123             // see comment above for more inforamtion.
+2124             if (!containsGlobal(xme.get_x_root(), xme.get_y_root()) &amp;&amp; !dragging) {
+2125                 // Outside of Java
+2126                 return;
+2127             }
+2128         }
+2129         super.handleMotionNotify(xev);
+2130     }
+2131 
+2132     // we use it to retarget mouse drag and mouse release during grab.
+2133     private XBaseWindow pressTarget = this;
+2134 
+2135     public void handleButtonPressRelease(XEvent xev) {
+2136         XButtonEvent xbe = xev.get_xbutton();
+2137 
+2138         /*
+2139          * Ignore the buttons above 20 due to the bit limit for
+2140          * InputEvent.BUTTON_DOWN_MASK.
+2141          * One more bit is reserved for FIRST_HIGH_BIT.
+2142          */
+2143         if (xbe.get_button() &gt; SunToolkit.MAX_BUTTONS_SUPPORTED) {
+2144             return;
+2145         }
+2146         if (grabLog.isLoggable(PlatformLogger.FINE)) {
+2147             grabLog.fine("{0}, when grabbed {1}, contains {2} ({3}, {4}, {5}x{6})",
+2148                          xbe, isGrabbed(), containsGlobal(xbe.get_x_root(), xbe.get_y_root()), getAbsoluteX(), getAbsoluteY(), getWidth(), getHeight());
+2149         }
+2150         if (isGrabbed()) {
+2151             // When window is grabbed, all events are dispatched to
+2152             // it.  Retarget them to the corresponding windows (notice
+2153             // that XBaseWindow.dispatchEvent does the opposite
+2154             // translation)
+2155             XBaseWindow target = XToolkit.windowToXWindow(xbe.get_window());
+2156             try {
+2157                 if (grabLog.isLoggable(PlatformLogger.FINER)) {
+2158                     grabLog.finer("  -  Grab event target {0} (press target {1})", target, pressTarget);
+2159                 }
+2160                 if (xbe.get_type() == XConstants.ButtonPress
+2161                     &amp;&amp; xbe.get_button() == XConstants.buttons[0])
+2162                 {
+2163                     // need to keep it to retarget mouse release
+2164                     pressTarget = target;
+2165                 } else if (xbe.get_type() == XConstants.ButtonRelease
+2166                            &amp;&amp; xbe.get_button() == XConstants.buttons[0]
+2167                            &amp;&amp; pressTarget != target)
+2168                 {
+2169                     // during grab we do receive mouse release on different component (not on the source
+2170                     // of mouse press).  So we need to retarget it.
+2171                     // see 6390326 for more information.
+2172                     target = pressTarget.isVisible() ? pressTarget : this;
+2173                     xbe.set_window(target.getWindow());
+2174                     Point localCoord = target.toLocal(xbe.get_x_root(), xbe.get_y_root());
+2175                     xbe.set_x(localCoord.x);
+2176                     xbe.set_y(localCoord.y);
+2177                     pressTarget = this;
+2178                 }
+2179                 if (target != null &amp;&amp; target != getContentXWindow() &amp;&amp; target != this) {
+2180                     target.dispatchEvent(xev);
+2181                     return;
+2182                 }
+2183             } finally {
+2184                 if (target != null) {
+2185                     // Target is either us or our content window -
+2186                     // check that event is inside.  'Us' in case of
+2187                     // shell will mean that this will also filter out press on title
+2188                     if ((target == this || target == getContentXWindow()) &amp;&amp; !containsGlobal(xbe.get_x_root(), xbe.get_y_root())) {
+2189                         // Outside this toplevel hierarchy
+2190                         // According to the specification of UngrabEvent, post it
+2191                         // when press occurs outside of the window and not on its owned windows
+2192                         if (xbe.get_type() == XConstants.ButtonPress) {
+2193                             if (grabLog.isLoggable(PlatformLogger.FINE)) {
+2194                                 grabLog.fine("Generating UngrabEvent on {0} because not inside of shell", this);
+2195                             }
+2196                             postEventToEventQueue(new sun.awt.UngrabEvent(getEventSource()));
+2197                             return;
+2198                         }
+2199                     }
+2200                     // First, get the toplevel
+2201                     XWindowPeer toplevel = target.getToplevelXWindow();
+2202                     if (toplevel != null) {
+2203                         Window w = (Window)toplevel.target;
+2204                         while (w != null &amp;&amp; toplevel != this &amp;&amp; !(toplevel instanceof XDialogPeer)) {
+2205                             w = (Window) AWTAccessor.getComponentAccessor().getParent(w);
+2206                             if (w != null) {
+2207                                 toplevel = (XWindowPeer) AWTAccessor.getComponentAccessor().getPeer(w);
+2208                             }
+2209                         }
+2210                         if (w == null || (w != this.target &amp;&amp; w instanceof Dialog)) {
+2211                             // toplevel == null - outside of
+2212                             // hierarchy, toplevel is Dialog - should
+2213                             // send ungrab (but shouldn't for Window)
+2214                             if (grabLog.isLoggable(PlatformLogger.FINE)) {
+2215                                 grabLog.fine("Generating UngrabEvent on {0} because hierarchy ended", this);
+2216                             }
+2217                             postEventToEventQueue(new sun.awt.UngrabEvent(getEventSource()));
+2218                         }
+2219                     } else {
+2220                         // toplevel is null - outside of hierarchy
+2221                         if (grabLog.isLoggable(PlatformLogger.FINE)) {
+2222                             grabLog.fine("Generating UngrabEvent on {0} because toplevel is null", this);
+2223                         }
+2224                         postEventToEventQueue(new sun.awt.UngrabEvent(getEventSource()));
+2225                         return;
+2226                     }
+2227                 } else {
+2228                     // target doesn't map to XAWT window - outside of hierarchy
+2229                     if (grabLog.isLoggable(PlatformLogger.FINE)) {
+2230                         grabLog.fine("Generating UngrabEvent on because target is null {0}", this);
+2231                     }
+2232                     postEventToEventQueue(new sun.awt.UngrabEvent(getEventSource()));
+2233                     return;
+2234                 }
+2235             }
+2236         }
+2237         super.handleButtonPressRelease(xev);
+2238     }
+2239 
+2240     public void print(Graphics g) {
+2241         // We assume we print the whole frame,
+2242         // so we expect no clip was set previously
+2243         Shape shape = AWTAccessor.getWindowAccessor().getShape((Window)target);
+2244         if (shape != null) {
+2245             g.setClip(shape);
+2246         }
+2247         super.print(g);
+2248     }
+2249 
+2250     @Override
+2251     public void setOpacity(float opacity) {
+2252         final long maxOpacity = 0xffffffffl;
+2253         long iOpacity = (long)(opacity * maxOpacity);
+2254         if (iOpacity &lt; 0) {
+2255             iOpacity = 0;
+2256         }
+2257         if (iOpacity &gt; maxOpacity) {
+2258             iOpacity = maxOpacity;
+2259         }
+2260 
+2261         XAtom netWmWindowOpacityAtom = XAtom.get("_NET_WM_WINDOW_OPACITY");
+2262 
+2263         if (iOpacity == maxOpacity) {
+2264             netWmWindowOpacityAtom.DeleteProperty(getWindow());
+2265         } else {
+2266             netWmWindowOpacityAtom.setCard32Property(getWindow(), iOpacity);
+2267         }
+2268     }
+2269 
+2270     @Override
+2271     public void setOpaque(boolean isOpaque) {
+2272         // no-op
+2273     }
+2274 
+2275     @Override
+2276     public void updateWindow() {
+2277         // no-op
+2278     }
+2279 }
+</pre></body></html>
