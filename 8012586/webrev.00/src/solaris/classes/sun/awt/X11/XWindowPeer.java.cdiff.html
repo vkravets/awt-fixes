@@ -95,13 +95,15 @@ hr { border: none 0; border-top: 1px solid #aaa; height: 1px; }
                   typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_UTILITY;
                   break;
               case POPUP:
-<span class="newmarker">--- 1885,1895 ----</span>
+<span class="newmarker">--- 1885,1897 ----</span>
           XAtom typeAtom = null;
   
           switch (getWindowType())
           {
               case NORMAL:
-<span class="changed">!                 typeAtom = (ownerPeer == null) ? protocol.XA_NET_WM_WINDOW_TYPE_NORMAL : protocol.XA_NET_WM_WINDOW_TYPE_DIALOG;</span>
+<span class="changed">!                 typeAtom = (ownerPeer == null) ? </span>
+<span class="changed">!                                protocol.XA_NET_WM_WINDOW_TYPE_NORMAL : </span>
+<span class="changed">!                                protocol.XA_NET_WM_WINDOW_TYPE_DIALOG;</span>
                   break;
               case UTILITY:
                   typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_UTILITY;

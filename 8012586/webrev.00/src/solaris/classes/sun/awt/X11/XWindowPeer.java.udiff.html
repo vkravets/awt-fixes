@@ -92,14 +92,16 @@ span.new {
 <pre>rev 6882 : fix of <a href="https://jbs.oracle.com/bugs/browse/JDK-8012586">8012586</a></pre>
         <pre>
 </pre><hr /><pre>
-<span class="newmarker">@@ -1885,11 +1885,11 @@</span>
+<span class="newmarker">@@ -1885,11 +1885,13 @@</span>
          XAtom typeAtom = null;
  
          switch (getWindowType())
          {
              case NORMAL:
 <span class="removed">-                typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_NORMAL;</span>
-<span class="new">+                typeAtom = (ownerPeer == null) ? protocol.XA_NET_WM_WINDOW_TYPE_NORMAL : protocol.XA_NET_WM_WINDOW_TYPE_DIALOG;</span>
+<span class="new">+                typeAtom = (ownerPeer == null) ? </span>
+<span class="new">+                               protocol.XA_NET_WM_WINDOW_TYPE_NORMAL : </span>
+<span class="new">+                               protocol.XA_NET_WM_WINDOW_TYPE_DIALOG;</span>
                  break;
              case UTILITY:
                  typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_UTILITY;

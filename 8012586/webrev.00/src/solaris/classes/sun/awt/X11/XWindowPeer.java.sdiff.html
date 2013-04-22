@@ -107,6 +107,8 @@ hr { border: none 0; border-top: 1px solid #aaa; height: 1px; }
 1888         {
 1889             case NORMAL:
 <span class="changed">1890                 typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_NORMAL;</span>
+
+
 1891                 break;
 1892             case UTILITY:
 1893                 typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_UTILITY;
@@ -152,27 +154,29 @@ hr { border: none 0; border-top: 1px solid #aaa; height: 1px; }
 1887         switch (getWindowType())
 1888         {
 1889             case NORMAL:
-<span class="changed">1890                 typeAtom = (ownerPeer == null) ? protocol.XA_NET_WM_WINDOW_TYPE_NORMAL : protocol.XA_NET_WM_WINDOW_TYPE_DIALOG;</span>
-1891                 break;
-1892             case UTILITY:
-1893                 typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_UTILITY;
-1894                 break;
-1895             case POPUP:
-1896                 typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_POPUP_MENU;
-1897                 break;
-1898         }
-1899 
-1900         if (typeAtom != null) {
-1901             XAtomList wtype = new XAtomList();
-1902             wtype.add(typeAtom);
-1903             protocol.XA_NET_WM_WINDOW_TYPE.
-1904                 setAtomListProperty(getWindow(), wtype);
-1905         } else {
-1906             protocol.XA_NET_WM_WINDOW_TYPE.
-1907                 DeleteProperty(getWindow());
-1908         }
-1909     }
-1910 
+<span class="changed">1890                 typeAtom = (ownerPeer == null) ? </span>
+<span class="changed">1891                                protocol.XA_NET_WM_WINDOW_TYPE_NORMAL : </span>
+<span class="changed">1892                                protocol.XA_NET_WM_WINDOW_TYPE_DIALOG;</span>
+1893                 break;
+1894             case UTILITY:
+1895                 typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_UTILITY;
+1896                 break;
+1897             case POPUP:
+1898                 typeAtom = protocol.XA_NET_WM_WINDOW_TYPE_POPUP_MENU;
+1899                 break;
+1900         }
+1901 
+1902         if (typeAtom != null) {
+1903             XAtomList wtype = new XAtomList();
+1904             wtype.add(typeAtom);
+1905             protocol.XA_NET_WM_WINDOW_TYPE.
+1906                 setAtomListProperty(getWindow(), wtype);
+1907         } else {
+1908             protocol.XA_NET_WM_WINDOW_TYPE.
+1909                 DeleteProperty(getWindow());
+1910         }
+1911     }
+1912 
 
 </pre><hr></hr>
 </pre></td>
