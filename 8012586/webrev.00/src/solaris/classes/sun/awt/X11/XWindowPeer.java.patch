@@ -1,5 +1,12 @@
---- old/src/solaris/classes/sun/awt/X11/XWindowPeer.java	2013-04-22 17:10:34.379178316 +0300
-+++ new/src/solaris/classes/sun/awt/X11/XWindowPeer.java	2013-04-22 17:10:33.942514015 +0300
+--- old/src/solaris/classes/sun/awt/X11/XWindowPeer.java	2013-04-24 15:20:05.229392886 +0300
++++ new/src/solaris/classes/sun/awt/X11/XWindowPeer.java	2013-04-24 15:20:05.021392880 +0300
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2002, 2010, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2002, 2013, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
 @@ -1887,7 +1887,9 @@
          switch (getWindowType())
          {

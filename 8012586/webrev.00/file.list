@@ -1,1 +1,2 @@
 src/solaris/classes/sun/awt/X11/XWindowPeer.java
+test/java/awt/WMSpecificTests/Metacity/FullscreenDialogModality.java
